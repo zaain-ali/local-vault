@@ -1,50 +1,23 @@
 {
-	"search.exclude": {
-		"**/.sst": true
-	},
-	"task.allowAutomaticTasks": true,
-	"typescript.tsserver.experimental.enableProjectDiagnostics": true,
-	"typescript.preferences.importModuleSpecifier": "relative",
-	"typescript.tsdk": "node_modules/typescript/lib",
-	"debug.openDebug": "neverOpen",
-	"problems.autoReveal": true,
-	"editor.formatOnSave": true,
-	"prettier.enable": false,
-	"biome.lsp.bin": "./apps/web/node_modules/@biomejs/biome/bin/biome",
-	"editor.defaultFormatter": "biomejs.biome",
-	"[javascript]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[javascriptreact]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[typescript]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[typescriptreact]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[json]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[jsonc]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"[css]": {
-		"editor.defaultFormatter": "biomejs.biome"
-	},
-	"editor.codeActionsOnSave": {
-		"source.organizeImports.biome": "explicit"
-	},
-	"terminal.integrated.hideOnStartup": "always",
-	"terminal.integrated.defaultProfile.windows": "Command Prompt",
-	"terminal.integrated.inheritEnv": false,
-	"jestrunner.configPath": "jest.unit.config.cjs",
-	"compile-hero.disable-compile-files-on-did-save-code": true,
-	"tasks": {
-		"label": "lint on open",
-		"type": "shell",
-		"command": "npm run lint",
-		"runOn": "folderOpen"
-	}
+  "search.exclude": {
+    "**/.sst": true
+  },
+  "task.allowAutomaticTasks": true,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "debug.openDebug": "neverOpen",
+  "problems.autoReveal": true,
+  "terminal.integrated.hideOnStartup": "always",
+  "terminal.integrated.defaultProfile.windows": "Command Prompt",
+  "terminal.integrated.inheritEnv": false,
+  "jestrunner.configPath": "jest.unit.config.cjs",
+  "compile-hero.disable-compile-files-on-did-save-code": true,
+  "tasks": {
+    "label": "lint on open",
+    "type": "shell",
+    "command": "npm run lint",
+    "runOn": "folderOpen"
+  }
 }
