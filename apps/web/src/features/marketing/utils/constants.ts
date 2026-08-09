@@ -398,8 +398,6 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
 		links: [
 			{ label: "GitHub", href: EXTERNAL_LINKS.github, external: true },
 			{ label: "License", href: EXTERNAL_LINKS.license, external: true },
-			{ label: "Privacy", href: "#" },
-			{ label: "Contact", href: "#" },
 		],
 	},
 ];
