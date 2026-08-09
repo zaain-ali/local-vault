@@ -1,7 +1,7 @@
 {
     "recommendations": [
         "myml.vscode-markdown-plantuml-preview",
-        "biomejs.biome",
+        "esbenp.prettier-vscode",
         "jebbs.plantuml"
     ]
 }
