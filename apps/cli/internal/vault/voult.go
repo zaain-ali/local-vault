@@ -5,6 +5,7 @@ package vault
 // Think of this like your database layer
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json" // like JSON.parse / JSON.stringify in JS
 	"errors"
@@ -491,15 +492,31 @@ func parseEnvLine(line string) (string, string, bool) {
 	return "", "", false
 }
 
+// ErrPeerKeyChanged is returned when an update would replace a known peer's keys
+var ErrPeerKeyChanged = errors.New("peer keys changed — refusing to update a trusted peer")
+
+// keyChanged reports whether a stored key would be replaced by a different one
+func keyChanged(stored, incoming []byte) bool {
+	return len(stored) > 0 && len(incoming) > 0 && !bytes.Equal(stored, incoming)
+}
+
 // AddPeer saves a trusted peer to the vault
 // Called after successful lv join
 func (v *Vault) AddPeer(peer Peer) error {
 	// Check if peer already exists
 	for i, p := range v.file.Peers {
 		if p.DeviceID == peer.DeviceID {
-			// Update existing peer info
-			v.file.Peers[i].PublicKey = peer.PublicKey
+			// Keys of a known peer are pinned — a change must never be applied silently
+			if keyChanged(p.PublicKey, peer.PublicKey) || keyChanged(p.X25519PublicKey, peer.X25519PublicKey) {
+				return ErrPeerKeyChanged
+			}
 			v.file.Peers[i].DeviceName = peer.DeviceName
+			if len(p.PublicKey) == 0 {
+				v.file.Peers[i].PublicKey = peer.PublicKey
+			}
+			if len(p.X25519PublicKey) == 0 {
+				v.file.Peers[i].X25519PublicKey = peer.X25519PublicKey
+			}
 			return v.save()
 		}
 	}

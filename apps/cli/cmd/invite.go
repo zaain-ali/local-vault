@@ -2,147 +2,152 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/zain-23/local-vault/apps/cli/internal/api"
-	"github.com/zain-23/local-vault/apps/cli/internal/identity"
-	"github.com/zain-23/local-vault/apps/cli/internal/joincode"
-	internalsync "github.com/zain-23/local-vault/apps/cli/internal/sync"
+	"github.com/zain-23/local-vault/apps/cli/internal/knownkeys"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
 
 var inviteCmd = &cobra.Command{
 	Use:   "invite [email]",
-	Short: "Invite a workspace member to this vault by email",
+	Short: "Add a workspace member to this vault",
 	Example: `  lv invite sara@company.com
   lv invite --list
-  lv invite --revoke sara@company.com`,
+  lv invite --revoke usr_x`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir, err := os.Getwd()
+		v, err := requireVault(envFlag)
 		if err != nil {
 			return err
 		}
-		lvDir := filepath.Join(dir, ".lv")
-
-		id, err := identity.Load(lvDir)
-		if err != nil {
-			return err
-		}
-		cfg, err := requireLinkedConfig(lvDir)
-		if err != nil {
-			return err
-		}
-		client, err := requireAPI()
-		if err != nil {
-			return err
-		}
-
 		listFlag, _ := cmd.Flags().GetBool("list")
 		revokeArg, _ := cmd.Flags().GetString("revoke")
+		role, _ := cmd.Flags().GetString("role")
+		if role == "" {
+			role = "member"
+		}
 
 		if listFlag {
-			return listCollaborators(client, cfg.WorkspaceID, cfg.VaultID)
+			return listVaultMembers(v)
 		}
 		if revokeArg != "" {
-			return revokeCollaborator(client, cfg.WorkspaceID, cfg.VaultID, revokeArg)
+			return revokeVaultMember(v, revokeArg)
 		}
 		if len(args) == 0 {
 			return fmt.Errorf("provide an email\n  Example: lv invite sara@company.com")
 		}
 		email := strings.TrimSpace(args[0])
-
-		v, err := loadVault(dir)
+		detail, err := v.Client.GetVaultV4(v.Project.Workspace, v.Project.Vault)
 		if err != nil {
+			return mapNotLoggedIn(err)
+		}
+		access := defaultEnvAccess(envNames(detail), role)
+		if err := v.syncGrants(); err != nil {
 			return err
 		}
-		dek, err := v.EnsureDataKey()
+		mem, err := v.Client.AddVaultMember(v.Project.Workspace, v.Project.Vault, email, role, access)
 		if err != nil {
-			return err
+			return mapNotLoggedIn(err)
 		}
-
-		code, err := joincode.New()
-		if err != nil {
-			return fmt.Errorf("failed to generate join code: %w", err)
+		ui.Success("added %s as %s", mem.Email, mem.Role)
+		if !mem.HasKeys {
+			ui.Hint("they must run: lv login   then an admin: lv access grant")
+			return nil
 		}
-		// Wrap with the same normalized form the invitee will type into `lv join`.
-		code = normalizeJoinCode(code)
-		wrappedDEK, err := internalsync.WrapKey(dek, []byte(code))
-		if err != nil {
-			return err
+		if err := knownkeys.Check(mem.UserID, mem.Fingerprint); err != nil {
+			ui.Warn("%s", err)
+			ui.Hint("grant later with: lv access grant")
+			return nil
 		}
-
-		collab, err := client.InviteCollaborator(cfg.WorkspaceID, cfg.VaultID, api.InviteCollaboratorRequest{
-			Email:      email,
-			DeviceID:   id.DeviceID,
-			Code:       code,
-			WrappedDEK: wrappedDEK,
-		})
-		if err != nil {
-			return mapNotLoggedIn(fmt.Errorf("failed to invite: %w", err))
+		ui.KeyValue("Fingerprint", mem.Fingerprint)
+		keys, err := v.Client.WorkspaceKeys(v.Project.Workspace, mem.UserID)
+		if err != nil || len(keys) == 0 {
+			ui.Hint("grant later with: lv access grant")
+			return nil
 		}
-
-		ui.Header("Vault Invite")
-		ui.KeyValue("Email", collab.Email)
-		ui.KeyValue("Expires", collab.ExpiresAt.Format("2006-01-02"))
-		ui.Success("invite email sent with join code")
-		ui.Hint("they run: lv login && lv join <code-from-email>")
+		var grants []api.GrantIn
+		for _, e := range access {
+			st := v.State.Envs[e.Env]
+			kv := st.KeyVersion
+			if kv == 0 {
+				kv = 1
+			}
+			wrapped, err := v.wrapGrant(e.Env, kv, keys[0].X25519PublicKey)
+			if err != nil {
+				ui.Warn("could not wrap %s: %v", e.Env, err)
+				continue
+			}
+			grants = append(grants, api.GrantIn{
+				Env: e.Env, KeyVersion: kv, RecipientType: "user",
+				RecipientID: mem.UserID, WrappedKey: wrapped,
+			})
+		}
+		if len(grants) > 0 {
+			if err := v.Client.PostGrants(v.Project.Workspace, v.Project.Vault, grants); err != nil {
+				ui.Warn("member added but grant failed: %v", err)
+				ui.Hint("run: lv access grant")
+				return nil
+			}
+			ui.Success("granted keys for %d environment(s)", len(grants))
+		}
+		ui.Hint("they run: lv link --vault %s", v.Project.Vault)
 		return nil
 	},
 }
 
-func listCollaborators(client *api.Client, workspaceID, vaultID string) error {
-	list, err := client.ListCollaborators(workspaceID, vaultID)
+func listVaultMembers(v *vaultCtx) error {
+	detail, err := v.Client.GetVaultV4(v.Project.Workspace, v.Project.Vault)
 	if err != nil {
 		return mapNotLoggedIn(err)
 	}
-	if len(list) == 0 {
-		ui.Info("no collaborators or pending invites")
-		ui.Hint("invite one: lv invite sara@company.com")
+	if len(detail.Members) == 0 {
+		ui.Info("no members")
 		return nil
 	}
-	rows := make([][]string, 0, len(list))
-	for _, c := range list {
-		rows = append(rows, []string{c.Email, c.Status, c.ID, c.CreatedAt.Format("2006-01-02 15:04")})
+	rows := make([][]string, 0, len(detail.Members))
+	for _, m := range detail.Members {
+		fp := m.Fingerprint
+		if fp == "" {
+			fp = "no keys"
+		}
+		rows = append(rows, []string{m.Email, m.Role, fp, m.UserID})
 	}
-	ui.Header("Vault Collaborators")
-	ui.Table([]string{"EMAIL", "STATUS", "ID", "CREATED"}, rows)
+	ui.Header("Vault Members")
+	ui.Table([]string{"EMAIL", "ROLE", "FINGERPRINT", "ID"}, rows)
 	return nil
 }
 
-func revokeCollaborator(client *api.Client, workspaceID, vaultID, emailOrID string) error {
-	list, err := client.ListCollaborators(workspaceID, vaultID)
+func revokeVaultMember(v *vaultCtx, emailOrID string) error {
+	detail, err := v.Client.GetVaultV4(v.Project.Workspace, v.Project.Vault)
 	if err != nil {
 		return mapNotLoggedIn(err)
 	}
-	var target *api.Collaborator
-	for i := range list {
-		c := &list[i]
-		if c.Status != "pending" {
-			continue
-		}
-		if c.ID == emailOrID || strings.EqualFold(c.Email, emailOrID) {
-			target = c
+	var target *api.VaultMember
+	for i := range detail.Members {
+		m := &detail.Members[i]
+		if m.UserID == emailOrID || strings.EqualFold(m.Email, emailOrID) {
+			target = m
 			break
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("no pending invite matching %q", emailOrID)
+		return fmt.Errorf("no member matching %q", emailOrID)
 	}
-	if err := client.RevokeCollaborator(workspaceID, vaultID, target.ID); err != nil {
+	if err := v.Client.RemoveVaultMember(v.Project.Workspace, v.Project.Vault, target.UserID); err != nil {
 		return mapNotLoggedIn(err)
 	}
-	ui.Success("invite revoked")
-	ui.KeyValue("Email", target.Email)
+	ui.Success("removed %s", target.Email)
+	ui.Hint("rotate the environment key: lv rekey --env <env>")
 	return nil
 }
 
 func init() {
-	inviteCmd.Flags().Bool("list", false, "list collaborators and pending invites")
-	inviteCmd.Flags().String("revoke", "", "revoke a pending invite by email or id")
+	inviteCmd.Flags().Bool("list", false, "list vault members")
+	inviteCmd.Flags().String("revoke", "", "remove a member by email or id")
+	inviteCmd.Flags().String("role", "member", "vault role: admin or member")
+	inviteCmd.Flags().StringVarP(&envFlag, "env", "e", "", "unused (kept for compatibility)")
 	rootCmd.AddCommand(inviteCmd)
 }

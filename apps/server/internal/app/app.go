@@ -22,6 +22,9 @@ import (
 	"github.com/zain-23/local-vault/apps/server/internal/dashboard"
 	"github.com/zain-23/local-vault/apps/server/internal/device"
 	"github.com/zain-23/local-vault/apps/server/internal/email"
+	"github.com/zain-23/local-vault/apps/server/internal/events"
+	"github.com/zain-23/local-vault/apps/server/internal/keys"
+	"github.com/zain-23/local-vault/apps/server/internal/machine"
 	"github.com/zain-23/local-vault/apps/server/internal/member"
 	"github.com/zain-23/local-vault/apps/server/internal/vault"
 	"github.com/zain-23/local-vault/apps/server/internal/workspace"
@@ -57,18 +60,35 @@ func New(cfg config.Config) (*App, error) {
 	// Select database — MongoDB creates it automatically on first write
 	db := client.Database(cfg.MongoDB)
 
-	// --------------- RabbitMQ (email pipeline) ---------
-	// connect once at startup; the connection lives for the process lifetime
-	_, mqCh, err := email.Connect(cfg.RabbitMQURL)
+	// --------------- RabbitMQ (email + events) ---------
+	// Optional in development so `go run` works without a broker.
+	hub := events.NewHub()
+	var publisher *email.Publisher
+	var eventBus *events.Bus
+	conn, mqCh, err := email.Connect(cfg.RabbitMQURL)
 	if err != nil {
-		return nil, err
+		if cfg.Env == "production" || cfg.Env == "prod" {
+			return nil, err
+		}
+		log.Printf("⚠️ RabbitMQ unavailable (%v) — email + cross-instance events disabled", err)
+		eventBus = events.NewLocalBus(hub)
+	} else {
+		if err := email.DeclareTopology(mqCh, cfg.EmailRetryDelay); err != nil {
+			return nil, err
+		}
+		publisher = email.NewPublisher(mqCh)
+		evCh, err := conn.Channel()
+		if err != nil {
+			log.Printf("⚠️ events channel: %v — using in-process bus", err)
+			eventBus = events.NewLocalBus(hub)
+		} else if bus, err := events.NewRabbitBus(hub, evCh); err != nil {
+			log.Printf("⚠️ events bus: %v — using in-process bus", err)
+			eventBus = events.NewLocalBus(hub)
+		} else {
+			eventBus = bus
+		}
+		log.Printf("✅ Connected to RabbitMQ")
 	}
-	// Declare the same topology the worker declares - idempotent, safe to repeat
-	if err := email.DeclareTopology(mqCh, cfg.EmailRetryDelay); err != nil {
-		return nil, err
-	}
-	publisher := email.NewPublisher(mqCh)
-	log.Printf("✅ Connected to RabbitMQ")
 
 	// --- Fiber ---
 	app := fiber.New(fiber.Config{
@@ -76,7 +96,7 @@ func New(cfg config.Config) (*App, error) {
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// Check if error is our custom apperror type — if yes, use its status code
 			if appErr, ok := errors.AsType[*apperror.Error](err); ok {
-				return c.Status(appErr.Status).JSON(fiber.Map{"error": appErr.Message})
+				return c.Status(appErr.Status).JSON(appErr.Body())
 			}
 			// Unknown error — send 500, don't leak internal details
 			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
@@ -86,8 +106,9 @@ func New(cfg config.Config) (*App, error) {
 	// CORS — allows frontend (different port/domain) to call API, without this browser blocks requests
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORSAllowedOrigins,
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Accept,Authorization,Content-Type",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		AllowHeaders:     "Accept,Authorization,Content-Type,If-None-Match,Idempotency-Key,X-Device-ID",
+		ExposeHeaders:    "ETag",
 		AllowCredentials: true,
 	}))
 
@@ -145,12 +166,20 @@ func New(cfg config.Config) (*App, error) {
 	deviceHandler := device.NewHandler(deviceService)
 	device.RegisterRoutes(app, deviceHandler, authMW)
 
-	// ------------ Wire Vault domain ----------
-	// Reuses wsStore as the RequireRole membership checker (RoleOf).
+	// ------------ Wire Vault + account-keys domains ----------
 	vaultStore := vault.NewStore(db)
-	vaultService := vault.NewService(vaultStore, auditService, memberDirectory{store: memberStore}, publisher, cfg)
-	vaultHandler := vault.NewHandler(vaultService)
+	keysStore := keys.NewStore(db)
+	vaultService := vault.NewService(vaultStore, auditService, memberDirectory{store: memberStore}, keyLookup{store: keysStore}, publisher, eventBus, cfg)
+	keysService := keys.NewService(keysStore, keysDirectory{store: memberStore}, vaultService, auditService)
+	keysHandler := keys.NewHandler(keysService)
+	keys.RegisterRoutes(app, keysHandler, wsStore, authMW)
+	vaultHandler := vault.NewHandler(vaultService, hub)
 	vault.RegisterRoutes(app, vaultHandler, wsStore, authMW)
+
+	machineStore := machine.NewStore(db)
+	machineService := machine.NewService(machineStore, vaultService, jwtService, auditService, eventBus, cfg)
+	machineHandler := machine.NewHandler(machineService, hub)
+	machine.RegisterRoutes(app, machineHandler, wsStore, authMW, middleware.MachineAuth(jwtService))
 
 	// ------------ Wire Audit domain (read side) ----------
 	auditHandler := audit.NewHandler(auditService)

@@ -13,8 +13,11 @@ type Claims struct {
 	jwtlib.RegisteredClaims                 
 	Email    string `json:"email"`           
 	Type     string `json:"type"`
-	DeviceID string `json:"device_id,omitempty"`
-	SID 	 string `json:"sid,omitempty"` // // session id — ties the token to a sessions row
+	DeviceID    string `json:"device_id,omitempty"`
+	SID         string `json:"sid,omitempty"` // session id — ties the token to a sessions row
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	VaultID     string `json:"vault_id,omitempty"`
+	Env         string `json:"env,omitempty"`
 }
 
 // Service creates and validates JWT tokens
@@ -50,6 +53,26 @@ func (s *Service) GenerateAccessToken(userID, email, deviceID, sessionID string)
 	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
 	// SignedString produces the final "eyJ..." string sent to client
 	return token.SignedString(s.secret)
+}
+
+// GenerateMachineToken creates a 15-minute token for a machine identity.
+func (s *Service) GenerateMachineToken(machineID, workspaceID, vaultID, env string) (string, time.Time, error) {
+	now := time.Now()
+	exp := now.Add(15 * time.Minute)
+	claims := Claims{
+		RegisteredClaims: jwtlib.RegisteredClaims{
+			Subject:   machineID,
+			IssuedAt:  jwtlib.NewNumericDate(now),
+			ExpiresAt: jwtlib.NewNumericDate(exp),
+		},
+		Type:        "machine",
+		WorkspaceID: workspaceID,
+		VaultID:     vaultID,
+		Env:         env,
+	}
+	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
+	signed, err := token.SignedString(s.secret)
+	return signed, exp, err
 }
 
 // GenerateTempToken creates a 5-minute token for 2FA — just long enough to enter the code

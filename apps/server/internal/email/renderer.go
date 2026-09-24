@@ -25,7 +25,7 @@ var registry = map[EmailKind]emailTemplate{
 		file: "invite.html",
 	},
 	KindVaultCollaboratorInvite: {
-		subject: "You've been invited to a LocalVault vault",
+		subject: "You've been given access to a LocalVault vault",
 		file: "vault_collaborator_invite.html",
 	},
 }

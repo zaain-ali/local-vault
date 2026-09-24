@@ -2,64 +2,27 @@ package cmd
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/zain-23/local-vault/apps/cli/internal/api"
-	"github.com/zain-23/local-vault/apps/cli/internal/appstate"
-	"github.com/zain-23/local-vault/apps/cli/internal/config"
-	"github.com/zain-23/local-vault/apps/cli/internal/session"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
-	"github.com/zain-23/local-vault/apps/cli/internal/vault"
 )
 
 var envFlag string
 
 var (
-	errNotLinked    = errors.New("vault not linked — run: lv init or lv join")
-	errNoWorkspace  = errors.New("no workspaces — create or join one in the app first")
-	errBadWorkspace = errors.New("not a member of that workspace")
+	errNoWorkspace  = fmt.Errorf("no workspaces — create or join one in the app first")
+	errBadWorkspace = fmt.Errorf("not a member of that workspace")
 )
 
 func promptPassphrase() (string, error) {
-	return ui.Passphrase("Passphrase")
+	return ui.Passphrase("Account passphrase")
 }
 
-func loadVault(dir string) (*vault.Vault, error) {
-	lvDir := filepath.Join(dir, ".lv")
-	key, err := session.Load(lvDir)
-	if err == nil {
-		return vault.LoadWithKey(dir, key)
-	}
-	return nil, fmt.Errorf("vault is locked\n\n  Run: lv unlock\n  (unlocks for 12 hours)")
-}
-
-func requireAPI() (*api.Client, error) {
-	st, err := appstate.Load()
-	if err != nil {
-		return nil, err
-	}
-	return api.New(st.ServerURL), nil
-}
-
-func requireLinkedConfig(lvDir string) (*config.Config, error) {
-	cfg, err := config.Load(lvDir)
-	if err != nil {
-		return nil, err
-	}
-	if cfg.WorkspaceID == "" || cfg.VaultID == "" {
-		return nil, errNotLinked
-	}
-	return cfg, nil
-}
-
-// resolveWorkspaceID picks a workspace id from --workspace or the membership list.
-// readLine is used only when len(memberships) > 1 and flag is empty; it should
-// return a 1-based index as a string (e.g. "1").
 func resolveWorkspaceID(flag string, memberships []api.WorkspaceMembership, readLine func() (string, error)) (string, error) {
 	if flag != "" {
 		for _, m := range memberships {
@@ -97,20 +60,20 @@ func stdinLine() (string, error) {
 	return bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
-func mapNotLoggedIn(err error) error {
-	if errors.Is(err, api.ErrNotLoggedIn) {
-		ui.Warn("not logged in")
-		ui.Hint("run: lv login")
+func runCommand(secrets map[string]string, args []string) error {
+	command := exec.Command(args[0], args[1:]...)
+	command.Env = os.Environ()
+	for key, value := range secrets {
+		command.Env = append(command.Env, fmt.Sprintf("%s=%s", key, value))
+	}
+	command.Stdin = os.Stdin
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
 		return err
 	}
-	return err
-}
-
-func apiPeerToVault(sp api.Peer) vault.Peer {
-	return vault.Peer{
-		DeviceID:        sp.DeviceID,
-		DeviceName:      sp.DeviceName,
-		PublicKey:       sp.PublicKey,
-		X25519PublicKey: sp.X25519PublicKey,
-	}
+	return nil
 }

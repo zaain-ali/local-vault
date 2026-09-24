@@ -78,6 +78,32 @@ func (s *Store) RoleOf(ctx context.Context, workspaceID, userID string) (string,
 	return m.Role, nil
 }
 
+// WorkspaceMemberIDs returns which of ids are members of the workspace
+// (every member when ids is empty).
+func (s *Store) WorkspaceMemberIDs(ctx context.Context, workspaceID string, ids []string) ([]string, error) {
+	filter := bson.M{"workspace_id": workspaceID}
+	if len(ids) > 0 {
+		filter["user_id"] = bson.M{"$in": ids}
+	}
+	cur, err := s.memberships.Find(ctx, filter, options.Find().SetProjection(bson.M{"user_id": 1}))
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		UserID string `bson:"user_id"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.UserID != "" {
+			out = append(out, r.UserID)
+		}
+	}
+	return out, nil
+}
+
 // MembershipExists is a cheap "is this user already a member?" check.
 func (s *Store) MembershipExists(ctx context.Context, workspaceID, userID string) (bool, error) {
 	err := s.memberships.FindOne(ctx, bson.M{
