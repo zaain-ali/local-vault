@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	runToken string
-	runOIDC  bool
+	runToken     string
+	runTokenFile string
+	runOIDC      bool
 )
 
 var runCmd = &cobra.Command{
@@ -24,11 +25,15 @@ var runCmd = &cobra.Command{
 	Short: "Decrypt secrets in memory and run a command (or export)",
 	Example: `  lv run -- npm start
   lv run --env production -- node server.js
+  lv run --token-file /run/secrets/lv-token -- ./app
   LV_SERVICE_TOKEN=lv_st_... lv run -- ./app`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token := runToken
-		if token == "" {
-			token = os.Getenv("LV_SERVICE_TOKEN")
+		if cmd.Flags().Changed("token-file") && runTokenFile == "" {
+			return fmt.Errorf("--token-file requires a non-empty path")
+		}
+		token, err := resolveRunToken(runToken, runTokenFile)
+		if err != nil {
+			return err
 		}
 		if token != "" {
 			return runMachineToken(token, args)
@@ -143,6 +148,7 @@ func decodeHexKey(s string) ([]byte, error) {
 func init() {
 	runCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment (user mode)")
 	runCmd.Flags().StringVar(&runToken, "token", "", "service token (or LV_SERVICE_TOKEN)")
+	runCmd.Flags().StringVar(&runTokenFile, "token-file", "", "protected service-token file (or LV_SERVICE_TOKEN_FILE)")
 	runCmd.Flags().BoolVar(&runOIDC, "oidc", false, "authenticate with LV_OIDC_TOKEN + LV_MACHINE_ID")
 	rootCmd.AddCommand(runCmd)
 }

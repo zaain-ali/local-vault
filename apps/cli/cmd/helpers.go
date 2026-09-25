@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -62,9 +63,17 @@ func stdinLine() (string, error) {
 
 func runCommand(secrets map[string]string, args []string) error {
 	command := exec.Command(args[0], args[1:]...)
-	command.Env = os.Environ()
+	command.Env = make([]string, 0, len(os.Environ())+len(secrets))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !isLVCredentialEnv(key) {
+			command.Env = append(command.Env, entry)
+		}
+	}
 	for key, value := range secrets {
-		command.Env = append(command.Env, fmt.Sprintf("%s=%s", key, value))
+		if !isLVCredentialEnv(key) {
+			command.Env = append(command.Env, fmt.Sprintf("%s=%s", key, value))
+		}
 	}
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
@@ -76,4 +85,17 @@ func runCommand(secrets map[string]string, args []string) error {
 		return err
 	}
 	return nil
+}
+
+// These names are reserved for lv itself, including when present in a vault.
+func isLVCredentialEnv(key string) bool {
+	if runtime.GOOS == "windows" {
+		key = strings.ToUpper(key)
+	}
+	switch key {
+	case "LV_SERVICE_TOKEN", "LV_SERVICE_TOKEN_FILE", "LV_OIDC_TOKEN", "LV_MACHINE_KEY":
+		return true
+	default:
+		return false
+	}
 }
