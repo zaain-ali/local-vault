@@ -7,34 +7,29 @@ import (
 	"github.com/zain-23/local-vault/apps/server/internal/audit"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type Store struct {
-	vaults        *mongo.Collection
-	memberships   *mongo.Collection
-	invites       *mongo.Collection
-	collaborators *mongo.Collection
-	events        *mongo.Collection
-	users         *mongo.Collection
+	vaults      *mongo.Collection
+	memberships *mongo.Collection
+	invites     *mongo.Collection
+	vMembers    *mongo.Collection
+	changes     *mongo.Collection
+	events      *mongo.Collection
+	users       *mongo.Collection
 }
 
 func NewStore(db *mongo.Database) *Store {
-	s := &Store{
-		vaults:        db.Collection("vaults"),
-		memberships:   db.Collection("memberships"),
-		invites:       db.Collection("workspace_invites"),
-		collaborators: db.Collection("vault_collaborators"),
-		events:        db.Collection("audit_events"),
-		users:         db.Collection("users"),
+	return &Store{
+		vaults:      db.Collection("vaults"),
+		memberships: db.Collection("memberships"),
+		invites:     db.Collection("workspace_invites"),
+		vMembers:    db.Collection("vault_members"),
+		changes:     db.Collection("vault_change_requests"),
+		events:      db.Collection("audit_events"),
+		users:       db.Collection("users"),
 	}
-
-	ctx := context.TODO()
-	// Speeds pending-collaborator counts by workspace (vault store indexes vault_id+status only).
-	s.collaborators.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "status", Value: 1}},
-	})
-
-	return s
 }
 
 // vaultAgg is the single-row result of the vaults summary aggregation.
@@ -63,14 +58,19 @@ func (s *Store) GetSummaryCounts(ctx context.Context, workspaceID string) (Summa
 			"total": bson.M{"$sum": 1},
 			"with_snapshot": bson.M{"$sum": bson.M{
 				"$cond": bson.A{
-					bson.M{"$gt": bson.A{bson.M{"$binarySize": bson.M{"$ifNull": bson.A{"$snapshot", ""}}}, 0}},
+					bson.M{"$gt": bson.A{
+						bson.M{"$size": bson.M{"$filter": bson.M{
+							"input": bson.M{"$ifNull": bson.A{"$environments", bson.A{}}},
+							"as":    "e",
+							"cond":  bson.M{"$gt": bson.A{"$$e.head_revision", 0}},
+						}}},
+						0,
+					}},
 					1,
 					0,
 				},
 			}},
-			"peer_total": bson.M{"$sum": bson.M{
-				"$size": bson.M{"$ifNull": bson.A{"$peers", bson.A{}}},
-			}},
+			"peer_total": bson.M{"$sum": 0},
 		}}},
 	}
 	cursor, err := s.vaults.Aggregate(ctx, pipeline)
@@ -98,10 +98,31 @@ func (s *Store) GetSummaryCounts(ctx context.Context, workspaceID string) (Summa
 		return out, err
 	}
 
-	out.PendingCollaborators, err = s.collaborators.CountDocuments(ctx, bson.M{
-		"workspace_id": workspaceID,
-		"status":       "pending",
-	})
+	out.Vaults.PeerTotal, err = s.vMembers.CountDocuments(ctx, bson.M{"workspace_id": workspaceID})
+	if err != nil {
+		return out, err
+	}
+
+	var vaultIDs []string
+	cur, err := s.vaults.Find(ctx, bson.M{"workspace_id": workspaceID}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return out, err
+	}
+	var idRows []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cur.All(ctx, &idRows); err != nil {
+		return out, err
+	}
+	for _, r := range idRows {
+		vaultIDs = append(vaultIDs, r.ID)
+	}
+	if len(vaultIDs) > 0 {
+		out.PendingCollaborators, err = s.changes.CountDocuments(ctx, bson.M{
+			"vault_id": bson.M{"$in": vaultIDs},
+			"status":   "pending",
+		})
+	}
 	if err != nil {
 		return out, err
 	}

@@ -3,10 +3,14 @@ package email
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	ampq "github.com/rabbitmq/amqp091-go"
 )
+
+// ErrDisabled is returned by a nil Publisher (development without RabbitMQ).
+var ErrDisabled = errors.New("email queue disabled (RabbitMQ not connected)")
 
 // Publisher drops email jobs onto the queue - held by the API binary
 type Publisher struct {
@@ -18,8 +22,12 @@ func NewPublisher(ch *ampq.Channel) *Publisher {
 	return &Publisher{ch: ch}
 }
 
-// Publish JSON-encodes the job and sends it to the work queue
+// Publish JSON-encodes the job and sends it to the work queue.
+// Safe on a nil *Publisher: returns ErrDisabled so callers just log it.
 func (p *Publisher) Publish(ctx context.Context, job EmailJob) error {
+	if p == nil || p.ch == nil {
+		return ErrDisabled
+	}
 	body, err := json.Marshal(job) // struct -> JSON bytes for the message body
 
 	if err != nil {

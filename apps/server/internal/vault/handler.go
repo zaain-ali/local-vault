@@ -1,23 +1,28 @@
 package vault
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/zain-23/local-vault/apps/server/internal/common/apperror"
 	"github.com/zain-23/local-vault/apps/server/internal/common/middleware"
 	"github.com/zain-23/local-vault/apps/server/internal/common/response"
 	"github.com/zain-23/local-vault/apps/server/internal/common/validate"
+	"github.com/zain-23/local-vault/apps/server/internal/events"
 )
 
 type Handler struct {
 	svc *Service
+	hub *events.Hub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, hub *events.Hub) *Handler {
+	return &Handler{svc: svc, hub: hub}
 }
 
-// Create — POST /api/v1/workspaces/:wid/vaults
 func (h *Handler) Create(c *fiber.Ctx) error {
 	var req CreateVaultRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -34,101 +39,58 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	return response.Success(c, res, fiber.StatusCreated, "vault created")
 }
 
-// List — GET /api/v1/workspaces/:wid/vaults
 func (h *Handler) List(c *fiber.Ctx) error {
-	res, err := h.svc.List(c.UserContext(), c.Params("wid"))
+	user := middleware.GetUser(c)
+	res, err := h.svc.List(c.UserContext(), c.Params("wid"), user.ID)
 	if err != nil {
 		return err
 	}
 	return response.Success(c, res, fiber.StatusOK, "vaults retrieved")
 }
 
-// Get — GET /api/v1/workspaces/:wid/vaults/:id
 func (h *Handler) Get(c *fiber.Ctx) error {
-	res, err := h.svc.Get(c.UserContext(), c.Params("wid"), c.Params("id"))
+	user := middleware.GetUser(c)
+	res, err := h.svc.Get(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email)
 	if err != nil {
 		return err
 	}
 	return response.Success(c, res, fiber.StatusOK, "vault retrieved")
 }
 
-// Delete — DELETE /api/v1/workspaces/:wid/vaults/:id
 func (h *Handler) Delete(c *fiber.Ctx) error {
-	if err := h.svc.Delete(c.UserContext(), c.Params("wid"), c.Params("id")); err != nil {
+	user := middleware.GetUser(c)
+	if err := h.svc.Delete(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email); err != nil {
 		return err
 	}
 	return response.Success(c, nil, fiber.StatusOK, "vault deleted")
 }
 
-// PushSnapshot — PUT /api/v1/workspaces/:wid/vaults/:id/snapshot
-func (h *Handler) PushSnapshot(c *fiber.Ctx) error {
-	var req PushSnapshotRequest
+func (h *Handler) AddEnvironment(c *fiber.Ctx) error {
+	var req AddEnvironmentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
 	}
-	if msg := validate.Struct(req); msg != "" {
-		return apperror.New(400, msg)
-	}
-	res, err := h.svc.PushSnapshot(c.UserContext(), c.Params("wid"), c.Params("id"), req.DeviceID, req.Snapshot)
-	if err != nil {
+	user := middleware.GetUser(c)
+	if err := h.svc.AddEnvironment(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email, req); err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusOK, "snapshot updated")
+	return response.Success(c, nil, fiber.StatusCreated, "environment added")
 }
 
-// PullSnapshot — GET /api/v1/workspaces/:wid/vaults/:id/snapshot
-func (h *Handler) PullSnapshot(c *fiber.Ctx) error {
-	res, err := h.svc.PullSnapshot(c.UserContext(), c.Params("wid"), c.Params("id"), c.Get("X-Device-ID"))
-	if err != nil {
-		return err
-	}
-	return response.Success(c, res, fiber.StatusOK, "snapshot retrieved")
-}
-
-// CreateToken — POST /api/v1/workspaces/:wid/vaults/:id/tokens
-func (h *Handler) CreateToken(c *fiber.Ctx) error {
-	var req CreateTokenRequest
+func (h *Handler) PatchEnvironment(c *fiber.Ctx) error {
+	var req PatchEnvironmentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
 	}
-	if msg := validate.Struct(req); msg != "" {
-		return apperror.New(400, msg)
-	}
-	res, err := h.svc.CreateToken(c.UserContext(), c.Params("wid"), c.Params("id"), req)
-	if err != nil {
+	user := middleware.GetUser(c)
+	if err := h.svc.PatchEnvironment(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email, req); err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusCreated, "token created")
+	return response.Success(c, nil, fiber.StatusOK, "environment updated")
 }
 
-// ListTokens — GET /api/v1/workspaces/:wid/vaults/:id/tokens
-func (h *Handler) ListTokens(c *fiber.Ctx) error {
-	res, err := h.svc.ListTokens(c.UserContext(), c.Params("wid"), c.Params("id"))
-	if err != nil {
-		return err
-	}
-	return response.Success(c, res, fiber.StatusOK, "tokens retrieved")
-}
-
-// RevokeToken — DELETE /api/v1/workspaces/:wid/vaults/:id/tokens/:tid
-func (h *Handler) RevokeToken(c *fiber.Ctx) error {
-	if err := h.svc.RevokeToken(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("tid")); err != nil {
-		return err
-	}
-	return response.Success(c, nil, fiber.StatusOK, "token revoked")
-}
-
-// RemovePeer — DELETE /api/v1/workspaces/:wid/vaults/:id/peers/:did
-func (h *Handler) RemovePeer(c *fiber.Ctx) error {
-	if err := h.svc.RemovePeer(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("did")); err != nil {
-		return err
-	}
-	return response.Success(c, nil, fiber.StatusOK, "peer removed")
-}
-
-// InviteCollaborator — POST .../vaults/:id/collaborators
-func (h *Handler) InviteCollaborator(c *fiber.Ctx) error {
-	var req InviteCollaboratorRequest
+func (h *Handler) AddMember(c *fiber.Ctx) error {
+	var req AddMemberRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
 	}
@@ -136,85 +98,182 @@ func (h *Handler) InviteCollaborator(c *fiber.Ctx) error {
 		return apperror.New(400, msg)
 	}
 	user := middleware.GetUser(c)
-	res, err := h.svc.InviteCollaborator(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, req)
+	res, err := h.svc.AddMember(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email, req)
 	if err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusCreated, "collaborator invited")
+	return response.Success(c, res, fiber.StatusCreated, "member added")
 }
 
-// ListCollaborators — GET .../vaults/:id/collaborators
-func (h *Handler) ListCollaborators(c *fiber.Ctx) error {
-	res, err := h.svc.ListCollaborators(c.UserContext(), c.Params("wid"), c.Params("id"))
-	if err != nil {
-		return err
-	}
-	return response.Success(c, res, fiber.StatusOK, "collaborators retrieved")
-}
-
-// RevokeCollaborator — DELETE .../vaults/:id/collaborators/:cid
-func (h *Handler) RevokeCollaborator(c *fiber.Ctx) error {
-	if err := h.svc.RevokeCollaborator(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("cid")); err != nil {
-		return err
-	}
-	return response.Success(c, nil, fiber.StatusOK, "invite revoked")
-}
-
-// JoinByCode — POST /api/v1/join-code
-func (h *Handler) JoinByCode(c *fiber.Ctx) error {
-	var req JoinByCodeRequest
+func (h *Handler) UpdateMember(c *fiber.Ctx) error {
+	var req UpdateMemberRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
-	}
-	if msg := validate.Struct(req); msg != "" {
-		return apperror.New(400, msg)
 	}
 	user := middleware.GetUser(c)
-	res, err := h.svc.JoinByCode(c.UserContext(), user.ID, user.Email, req)
+	res, err := h.svc.UpdateMember(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("uid"), user.ID, user.Email, req)
 	if err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusOK, "joined vault")
+	return response.Success(c, res, fiber.StatusOK, "member updated")
 }
 
-// Join — POST /api/v1/join (legacy token join).
-func (h *Handler) Join(c *fiber.Ctx) error {
-	var req JoinRequest
+func (h *Handler) RemoveMember(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	if err := h.svc.RemoveMember(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("uid"), user.ID, user.Email); err != nil {
+		return err
+	}
+	return response.Success(c, nil, fiber.StatusOK, "member removed")
+}
+
+func (h *Handler) MyGrants(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	res, err := h.svc.MyGrants(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "grants retrieved")
+}
+
+func (h *Handler) PendingGrants(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	res, err := h.svc.PendingGrants(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "pending grants retrieved")
+}
+
+func (h *Handler) CreateGrants(c *fiber.Ctx) error {
+	var req CreateGrantsRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
-	}
-	if msg := validate.Struct(req); msg != "" {
-		return apperror.New(400, msg)
 	}
 	user := middleware.GetUser(c)
-	res, err := h.svc.Join(c.UserContext(), req, user.ID)
+	if err := h.svc.CreateGrants(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email, req); err != nil {
+		return err
+	}
+	return response.Success(c, nil, fiber.StatusCreated, "grants stored")
+}
+
+func (h *Handler) Head(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	res, err := h.svc.Head(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email)
 	if err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusOK, "joined vault")
+	etag := fmt.Sprintf(`"r%d"`, res.Revision)
+	c.Set("ETag", etag)
+	if match := c.Get("If-None-Match"); match != "" && etagEqual(match, etag) {
+		return c.SendStatus(fiber.StatusNotModified)
+	}
+	return response.Success(c, res, fiber.StatusOK, "head retrieved")
 }
 
-// SendMessage — POST /api/v1/messages (auth required).
-func (h *Handler) SendMessage(c *fiber.Ctx) error {
-	var req SendMessageRequest
+func (h *Handler) ListRevisions(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	before, _ := strconv.Atoi(c.Query("before"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	res, err := h.svc.ListRevisions(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email, before, limit)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "revisions retrieved")
+}
+
+func (h *Handler) GetRevision(c *fiber.Ctx) error {
+	rev, err := strconv.Atoi(c.Params("rev"))
+	if err != nil || rev < 1 {
+		return apperror.New(400, "invalid revision")
+	}
+	user := middleware.GetUser(c)
+	res, err := h.svc.GetRevision(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), rev, user.ID, user.Email)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "revision retrieved")
+}
+
+func (h *Handler) PushRevision(c *fiber.Ctx) error {
+	var req PushRevisionRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperror.ErrInvalidBody
 	}
-	if msg := validate.Struct(req); msg != "" {
-		return apperror.New(400, msg)
-	}
-	res, err := h.svc.SendMessage(c.UserContext(), req)
+	user := middleware.GetUser(c)
+	res, err := h.svc.PushRevision(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email, c.Get("Idempotency-Key"), req)
 	if err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusCreated, "message queued")
+	return response.Success(c, res, fiber.StatusCreated, "revision committed")
 }
 
-// GetMessages — GET /api/v1/messages/:deviceId (auth required).
-func (h *Handler) GetMessages(c *fiber.Ctx) error {
-	res, err := h.svc.GetMessages(c.UserContext(), c.Params("deviceId"))
+func (h *Handler) CreateChangeRequest(c *fiber.Ctx) error {
+	var req CreateChangeRequestBody
+	if err := c.BodyParser(&req); err != nil {
+		return apperror.ErrInvalidBody
+	}
+	user := middleware.GetUser(c)
+	res, err := h.svc.CreateChangeRequest(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email, req)
 	if err != nil {
 		return err
 	}
-	return response.Success(c, res, fiber.StatusOK, "messages retrieved")
+	return response.Success(c, res, fiber.StatusCreated, "change request created")
+}
+
+func (h *Handler) ListChangeRequests(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	res, err := h.svc.ListChangeRequests(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), c.Query("status"), user.ID, user.Email)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "change requests retrieved")
+}
+
+func (h *Handler) ApproveChangeRequest(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	res, err := h.svc.ApproveChangeRequest(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), c.Params("crid"), user.ID, user.Email)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "change request approved")
+}
+
+func (h *Handler) RejectChangeRequest(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	if err := h.svc.RejectChangeRequest(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), c.Params("crid"), user.ID, user.Email); err != nil {
+		return err
+	}
+	return response.Success(c, nil, fiber.StatusOK, "change request rejected")
+}
+
+func (h *Handler) Rekey(c *fiber.Ctx) error {
+	var req RekeyRequest
+	if err := c.BodyParser(&req); err != nil {
+		return apperror.ErrInvalidBody
+	}
+	user := middleware.GetUser(c)
+	res, err := h.svc.Rekey(c.UserContext(), c.Params("wid"), c.Params("id"), c.Params("env"), user.ID, user.Email, req)
+	if err != nil {
+		return err
+	}
+	return response.Success(c, res, fiber.StatusOK, "environment rekeyed")
+}
+
+func (h *Handler) Events(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	if _, err := h.svc.resolve(c.UserContext(), c.Params("wid"), c.Params("id"), user.ID, user.Email); err != nil {
+		return err
+	}
+	if h.hub == nil {
+		return apperror.ErrInternal
+	}
+	return events.Stream(c, h.hub.Subscribe(c.Params("id")), events.StreamOptions{})
+}
+
+func etagEqual(got, want string) bool {
+	got = strings.TrimSpace(got)
+	if strings.HasPrefix(got, "W/") {
+		got = strings.TrimSpace(got[2:])
+	}
+	return got == want
 }

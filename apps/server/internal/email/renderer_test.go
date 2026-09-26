@@ -13,7 +13,7 @@ func TestRenderer_RendersAllKinds(t *testing.T) {
 
 	jobs := []EmailJob{
 		{Kind: KindWorkspaceInvite, Name: "Acme", URL: "https://app.example.com/invite?t=abc"},
-		{Kind: KindVaultCollaboratorInvite, Name: "prod-vault", Code: "XKCD12"},
+		{Kind: KindVaultCollaboratorInvite, Name: "prod-vault", Inviter: "Alex", Envs: "development, staging"},
 	}
 
 	for _, job := range jobs {
@@ -37,8 +37,14 @@ func TestRenderer_RendersAllKinds(t *testing.T) {
 			if job.URL != "" && !strings.Contains(html, job.URL) {
 				t.Fatal("missing URL")
 			}
-			if job.Code != "" && !strings.Contains(html, job.Code) {
-				t.Fatal("missing code")
+			if job.Kind == KindVaultCollaboratorInvite {
+				want := "Alex gave you access to vault prod-vault (development, staging)"
+				if !strings.Contains(strings.Join(strings.Fields(html), " "), want) {
+					t.Fatalf("missing %q", want)
+				}
+				if !strings.Contains(html, "lv link") {
+					t.Fatal("missing lv link instruction")
+				}
 			}
 		})
 	}

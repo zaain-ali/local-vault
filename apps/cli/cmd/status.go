@@ -1,17 +1,12 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/zain-23/local-vault/apps/cli/internal/api"
-	"github.com/zain-23/local-vault/apps/cli/internal/config"
-	"github.com/zain-23/local-vault/apps/cli/internal/identity"
-	"github.com/zain-23/local-vault/apps/cli/internal/session"
+	"github.com/zain-23/local-vault/apps/cli/internal/account"
+	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
 
@@ -19,96 +14,67 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show vault status and sync info",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir, err := os.Getwd()
+		f, err := account.Load()
 		if err != nil {
-			return err
-		}
-		lvDir := filepath.Join(dir, ".lv")
-
-		id, err := identity.Load(lvDir)
-		if err != nil {
-			return err
-		}
-		v, err := loadVault(dir)
-		if err != nil {
-			return err
-		}
-
-		secrets := v.List("")
-		localPeers := v.GetPeers()
-
-		envCounts := map[string]int{}
-		for _, s := range secrets {
-			env := s.Env
-			if env == "" {
-				env = "all"
+			ui.Warn("no account keys — run: lv login")
+		} else {
+			ui.Header("Account")
+			ui.KeyValue("Email", f.Email)
+			ui.KeyValue("Fingerprint", f.Bundle.Fingerprint)
+			if _, err := account.Keys(); err == nil {
+				ui.KeyValue("Session", "Unlocked")
+			} else {
+				ui.KeyValue("Session", "Locked — lv unlock")
 			}
-			envCounts[env]++
 		}
 
-		lockStatus := "Locked"
-		if remaining, err := session.TimeRemaining(lvDir); err == nil {
-			hours := int(remaining.Hours())
-			minutes := int(remaining.Minutes()) % 60
-			lockStatus = fmt.Sprintf("Unlocked (%dh %dm remaining)", hours, minutes)
+		v, err := requireVault(envFlag)
+		if err != nil {
+			ui.Hint("link a project: lv init or lv link")
+			return nil
+		}
+		detail, gerr := v.Client.GetVaultV4(v.Project.Workspace, v.Project.Vault)
+		if gerr != nil {
+			_ = mapNotLoggedIn(gerr)
 		}
 
-		cfg, _ := config.Load(lvDir)
-
-		ui.Header("LocalVault Status")
-		ui.KeyValue("Device", id.DeviceName)
-		ui.KeyValue("Device ID", id.DeviceID)
-		ui.KeyValue("Session", lockStatus)
-
-		if cfg != nil && cfg.WorkspaceID != "" {
-			ui.KeyValue("Workspace", cfg.WorkspaceID)
-		} else {
-			ui.KeyValue("Workspace", "not linked")
+		ui.Header("Project")
+		ui.KeyValue("Workspace", v.Project.Workspace)
+		ui.KeyValue("Vault", v.Project.Vault)
+		if detail != nil {
+			ui.KeyValue("Name", detail.Name)
+			ui.KeyValue("Role", detail.MyRole)
 		}
-		if cfg != nil && cfg.VaultID != "" {
-			ui.KeyValue("Vault", cfg.VaultID)
-		} else {
-			ui.KeyValue("Vault", "not linked")
-		}
+		ui.KeyValue("Default env", v.Project.DefaultEnv)
 
-		vaultName := ""
-		serverPeerCount := -1
-		if cfg != nil && cfg.WorkspaceID != "" && cfg.VaultID != "" {
-			if client, cerr := requireAPI(); cerr == nil {
-				if detail, gerr := client.GetVault(cfg.WorkspaceID, cfg.VaultID); gerr == nil {
-					vaultName = detail.Name
-					serverPeerCount = len(detail.Peers)
-				} else if errors.Is(gerr, api.ErrNotLoggedIn) {
-					ui.Warn("not logged in — server details skipped")
-					ui.Hint("run: lv login")
+		if detail != nil {
+			ui.Header("Environments")
+			for _, e := range detail.Environments {
+				st := v.State.Envs[e.Name]
+				dirty := ""
+				if st.Dirty {
+					dirty = " dirty"
 				}
+				n := 0
+				if snap, err := v.State.Working(e.Name); err == nil {
+					n = len(localstore.ActiveSecrets(snap))
+				}
+				flag := ""
+				if e.Protected {
+					flag = " protected"
+				}
+				if e.RekeyRequired {
+					flag += " rekey"
+				}
+				ui.KeyValue(e.Name, fmt.Sprintf("rev %d  kv %d  %d secrets%s%s", e.HeadRevision, e.KeyVersion, n, dirty, flag))
 			}
 		}
-		if vaultName != "" {
-			ui.KeyValue("Vault name", vaultName)
-		}
-
-		ui.KeyValue("Secrets", fmt.Sprintf("%d total", len(secrets)))
-		for env, count := range envCounts {
-			ui.KeyValue("  "+env, fmt.Sprintf("%d", count))
-		}
-
-		if serverPeerCount >= 0 {
-			ui.KeyValue("Peers", fmt.Sprintf("%d on server (%d local)", serverPeerCount, len(localPeers)))
-		} else {
-			ui.KeyValue("Peers", fmt.Sprintf("%d trusted (local)", len(localPeers)))
-		}
-		for _, peer := range localPeers {
-			ui.Info("  %s (%s)", peer.DeviceName, shortID(peer.DeviceID))
-		}
-
-		ui.Hint("lv sync   to pull latest secrets")
-		ui.Hint("lv push   to send secrets to peers")
-		ui.Hint("lv invite teammate@company.com")
+		ui.Hint("lv pull / lv push / lv access grant")
 		return nil
 	},
 }
 
 func init() {
+	statusCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment")
 	rootCmd.AddCommand(statusCmd)
 }

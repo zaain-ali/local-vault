@@ -2,16 +2,18 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zain-23/local-vault/apps/cli/internal/account"
+	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
+	"github.com/zain-23/local-vault/apps/cli/internal/lvcrypto"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
 
 var addCmd = &cobra.Command{
 	Use:   "add KEY=VALUE",
-	Short: "Add or update a secret",
+	Short: "Add or update a secret in the working copy",
 	Example: `  lv add DATABASE_URL=postgres://localhost/mydb
   lv add API_KEY=sk-xxx --env production`,
 	Args: cobra.ExactArgs(1),
@@ -25,27 +27,39 @@ var addCmd = &cobra.Command{
 		if key == "" {
 			return fmt.Errorf("key cannot be empty")
 		}
-
-		dir, _ := os.Getwd()
-		v, err := loadVault(dir)
+		v, err := requireVault(envFlag)
 		if err != nil {
 			return err
 		}
-		if err := v.Add(key, value, envFlag); err != nil {
+		if err := v.syncGrants(); err != nil {
 			return err
 		}
-
-		env := envFlag
-		if env == "" {
-			env = "all environments"
+		snap, err := v.State.Working(v.Env)
+		if err != nil {
+			return err
 		}
-		ui.Success("added %s (%s)", key, env)
-		ui.Hint("run: lv push   to sync with peers")
+		sec, ok := snap.Get(key)
+		if !ok {
+			sec = lvcrypto.Secret{Key: key}
+			snap.Secrets = append(snap.Secrets, sec)
+		}
+		for i := range snap.Secrets {
+			if snap.Secrets[i].Key == key {
+				snap.Secrets[i].Value = value
+				snap.Secrets[i].Deleted = false
+				localstore.Touch(&snap.Secrets[i], account.UserID())
+			}
+		}
+		if err := v.State.SetWorking(v.Env, snap, true); err != nil {
+			return err
+		}
+		ui.Success("added %s (%s)", key, v.Env)
+		ui.Hint("run: lv push")
 		return nil
 	},
 }
 
 func init() {
-	addCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment (development/staging/production)")
+	addCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment")
 	rootCmd.AddCommand(addCmd)
 }

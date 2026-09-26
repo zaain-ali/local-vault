@@ -1,15 +1,17 @@
 package cmd
 
 import (
-	"os"
+	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/zain-23/local-vault/apps/cli/internal/account"
+	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
 
 var removeCmd = &cobra.Command{
 	Use:   "remove KEY",
-	Short: "Remove a secret from the vault",
+	Short: "Remove a secret from the working copy",
 	Example: `  lv remove DATABASE_URL
   lv remove STRIPE_KEY --env production`,
 	Args: cobra.ExactArgs(1),
@@ -26,25 +28,31 @@ var removeCmd = &cobra.Command{
 				return nil
 			}
 		}
-
-		dir, err := os.Getwd()
+		v, err := requireVault(envFlag)
 		if err != nil {
 			return err
 		}
-		v, err := loadVault(dir)
+		snap, err := v.State.Working(v.Env)
 		if err != nil {
 			return err
 		}
-		if err := v.Remove(key, envFlag); err != nil {
+		found := false
+		for i := range snap.Secrets {
+			if snap.Secrets[i].Key == key {
+				snap.Secrets[i].Deleted = true
+				snap.Secrets[i].Value = ""
+				localstore.Touch(&snap.Secrets[i], account.UserID())
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("secret %q not found", key)
+		}
+		if err := v.State.SetWorking(v.Env, snap, true); err != nil {
 			return err
 		}
-
-		env := envFlag
-		if env == "" {
-			env = "all environments"
-		}
-		ui.Success("removed %s (%s)", key, env)
-		ui.Hint("run: lv push   to sync with peers")
+		ui.Success("removed %s (%s)", key, v.Env)
+		ui.Hint("run: lv push")
 		return nil
 	},
 }

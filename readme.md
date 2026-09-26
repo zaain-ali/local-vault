@@ -133,6 +133,7 @@ Each project has its own session. Unlocking one never unlocks another.
 # ── Owner ──────────────────────────────────────────
 lv invite teammate@company.com
 # invite email sent with join code
+# (self-hosted: needs RESEND_API_KEY + the email worker)
 
 lv push
 # encrypted snapshot sent to peers
@@ -237,6 +238,28 @@ App code stays the same — `process.env.KEY` works as usual.
 
 ---
 
+## Self-hosting and third-party services
+
+This project is [MIT-licensed](LICENSE). The CLI, API, and web app are yours to use and fork. The **services the server talks to** are not bundled — you bring your own if you self-host. That is normal for open source; it does not change the license.
+
+| What you are doing | MongoDB | GitHub OAuth | RabbitMQ | Resend |
+| --- | --- | --- | --- | --- |
+| Using `lv` against the hosted API | No | No | No | No |
+| Building / contributing to the CLI only | No | No | No | No |
+| Running or self-hosting the server | Yes | Yes (for login) | Only for invite emails | Only for invite emails |
+
+**MongoDB** is required for the API (users, vaults, grants, audit). Run [Community Edition](https://www.mongodb.com/try/download/community) on `mongodb://localhost:27017`, Docker, or [Atlas](https://www.mongodb.com/atlas) (free tier is enough). Using MongoDB as a database does not relicense this repo.
+
+**Resend** sends invite emails (`lv invite`). It is optional. Without `RESEND_API_KEY`, the server still runs; invites just are not emailed. Bring your own key — nothing ships in the repo. Resend’s free tier (verified domain, monthly send cap) is enough for most self-hosters.
+
+**GitHub OAuth** is required for `lv login` and the dashboard when you run your own server. Create an OAuth app and set the callback to `GITHUB_REDIRECT_URL`.
+
+**RabbitMQ** is only needed for the email worker (and cross-instance events). The API starts without it; email and those events stay disabled.
+
+Copy [`apps/server/.env.example`](apps/server/.env.example) to `apps/server/.env` and fill in your values. Never commit `.env` or API keys.
+
+---
+
 ## Monorepo development
 
 ```text
@@ -251,8 +274,8 @@ Requires [Go](https://go.dev) 1.26+, [pnpm](https://pnpm.io) 10.12.1, and option
 
 ### Running just the CLI locally
 
-No server needed — enough to try `init`/`add`/`get`/`list`/`import`/`inject`/`rotate`
-against the hosted API:
+No MongoDB, Resend, RabbitMQ, or GitHub OAuth. Enough to try
+`init`/`add`/`get`/`list`/`import`/`inject`/`rotate` against the hosted API:
 
 ```bash
 go build -o lv ./apps/cli   # or: task cli:build
@@ -261,19 +284,12 @@ go build -o lv ./apps/cli   # or: task cli:build
 
 ### Running the full stack locally
 
-The server needs MongoDB and RabbitMQ, plus a GitHub OAuth app for `lv login`. Set these
-env vars before starting it (none of these values ship in the repo):
+You need a MongoDB instance and a GitHub OAuth app. RabbitMQ and Resend are
+optional until you want invite emails to actually send.
 
 ```bash
-export MONGODB_URI=mongodb://localhost:27017
-export MONGODB_DATABASE=localvault
-export JWT_SECRET=<your-own-value>
-export GITHUB_CLIENT_ID=<your GitHub OAuth app client id>
-export GITHUB_CLIENT_SECRET=<your GitHub OAuth app client secret>
-export GITHUB_REDIRECT_URL=http://localhost:8080/api/v1/auth/oauth/github/callback
-export FRONTEND_URL=http://localhost:3000
-export RABBITMQ_URL=amqp://guest:guest@localhost:5672/
-export RESEND_API_KEY=<optional — only needed to actually send invite emails>
+cp apps/server/.env.example apps/server/.env
+# edit apps/server/.env — at least JWT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 ```
 
 ```bash
@@ -282,6 +298,7 @@ task server:worker    # or: go run ./apps/server/worker   (needed for invite ema
 ```
 
 ```bash
+cp apps/web/.env.example apps/web/.env
 pnpm install
 pnpm dev               # web dashboard, http://localhost:3000
 pnpm build
@@ -307,11 +324,14 @@ task test:go           # or: go test ./...
 | Path | Commit? |
 | ---- | ------- |
 | `.lv/` (entire folder) | No — gitignored |
+| `apps/server/.env` / `apps/web/.env` | No — copy from the `.env.example` files |
+| `apps/server/.env.example` | Yes |
 
 ---
 
 <p align="center">
   <em>Stop sharing secrets over Slack.</em><br/><br/>
+  Licensed under the <a href="LICENSE">MIT License</a>.<br/><br/>
   <a href="https://github.com/zain-23/local-vault/issues">Report a bug</a>
   ·
   <a href="https://github.com/zain-23/local-vault/issues">Request a feature</a>

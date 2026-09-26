@@ -6,15 +6,6 @@ import (
 	"time"
 )
 
-type JoinRequest struct {
-	Token           string `json:"token"`
-	Verifier        string `json:"verifier"`
-	DeviceID        string `json:"device_id"`
-	DeviceName      string `json:"device_name"`
-	PublicKey       []byte `json:"public_key"`
-	X25519PublicKey []byte `json:"x25519_public_key"`
-}
-
 type JoinResponse struct {
 	VaultID     string `json:"vault_id"`
 	WorkspaceID string `json:"workspace_id"`
@@ -43,14 +34,6 @@ type PendingMessage struct {
 type MessagesResponse struct {
 	Messages []PendingMessage `json:"messages"`
 	Count    int              `json:"count"`
-}
-
-func (c *Client) Join(req JoinRequest) (*JoinResponse, error) {
-	var out JoinResponse
-	if err := c.do(http.MethodPost, "/api/v1/join", req, &out, true); err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 func (c *Client) SendMessage(req SendMessageRequest) error {

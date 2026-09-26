@@ -1,9 +1,5 @@
 package cmd
 
-// get.go handles the "lv get KEY" command
-// Shows the actual value of a single secret
-// Unlike list which shows all keys but hides values
-
 import (
 	"fmt"
 	"os"
@@ -15,37 +11,27 @@ var getCmd = &cobra.Command{
 	Use:   "get KEY",
 	Short: "Get the value of a secret",
 	Example: `  lv get DATABASE_URL
-  lv get STRIPE_KEY --env production
-  lv get API_KEY --env development`,
+  lv get STRIPE_KEY --env production`,
 	Args: cobra.ExactArgs(1),
-
 	RunE: func(cmd *cobra.Command, args []string) error {
-		key := args[0]
-
-		dir, err := os.Getwd()
+		v, err := requireVault(envFlag)
 		if err != nil {
 			return err
 		}
-
-		// Use session key — no passphrase needed
-		v, err := loadVault(dir)
+		snap, err := v.State.Working(v.Env)
 		if err != nil {
 			return err
 		}
-
-		value, err := v.Get(key, envFlag)
-		if err != nil {
-			return err
+		sec, ok := snap.Get(args[0])
+		if !ok || sec.Deleted {
+			return fmt.Errorf("secret %q not found", args[0])
 		}
-
-		// Print clean value only
-		// Allows piping: lv get DATABASE_URL | xclip
-		fmt.Fprintln(os.Stdout, value)
+		fmt.Fprintln(os.Stdout, sec.Value)
 		return nil
 	},
 }
 
 func init() {
-	getCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment (development/staging/production)")
+	getCmd.Flags().StringVarP(&envFlag, "env", "e", "", "environment")
 	rootCmd.AddCommand(getCmd)
 }

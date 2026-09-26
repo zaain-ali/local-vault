@@ -2,165 +2,202 @@ package vault
 
 import "time"
 
-// --- create ---
+// GrantInput is a wrapped DEK the client already sealed for a recipient.
+type GrantInput struct {
+	Env           string `json:"env"`
+	KeyVersion    int    `json:"key_version"`
+	RecipientType string `json:"recipient_type,omitempty"`
+	RecipientID   string `json:"recipient_id,omitempty"`
+	WrappedKey    []byte `json:"wrapped_key"`
+}
 
-// CreateVaultRequest — the CLI sends its owner peer material; "name" is new.
-// json:"owner_id" preserves the old wire name for the P2P device id.
 type CreateVaultRequest struct {
-	Name            string `json:"name" validate:"required,max=100"`
-	OwnerDeviceID   string `json:"owner_id" validate:"required"`
-	OwnerName       string `json:"owner_name" validate:"required"`
-	PublicKey       []byte `json:"public_key" validate:"required"`
-	X25519PublicKey []byte `json:"x25519_public_key" validate:"required"`
+	ID           string      `json:"id"` // optional client-chosen vlt_ id (needed so grants bind GrantInfo)
+	Name         string      `json:"name" validate:"required,max=100"`
+	Environments []string    `json:"environments"`
+	Grants       []GrantInput `json:"grants" validate:"required"`
 }
 
-// CreateVaultResponse keeps the old relay shape so the CLI's init flow is unchanged.
-type CreateVaultResponse struct {
-	VaultID   string    `json:"vault_id"`
-	CreatedAt time.Time `json:"created_at"`
+type EnvAccessInput struct {
+	Env        string `json:"env" validate:"required"`
+	Permission string `json:"permission" validate:"required"`
 }
 
+type AddMemberRequest struct {
+	Email     string           `json:"email" validate:"required,email"`
+	Role      string           `json:"role"`
+	EnvAccess []EnvAccessInput `json:"env_access" validate:"required"`
+}
 
-// --- read (web dashboard) ---
-// VaultSummary is one row of the list endpoint (no peers, just a count).
-type VaultSummary struct {
-	ID            string    `json:"id"`
+type UpdateMemberRequest struct {
+	Role      *string          `json:"role"`
+	EnvAccess []EnvAccessInput `json:"env_access"`
+}
+
+type AddEnvironmentRequest struct {
+	Name      string     `json:"name" validate:"required"`
+	Protected bool       `json:"protected"`
+	Grant     GrantInput `json:"grant"`
+}
+
+type PatchEnvironmentRequest struct {
+	Protected *bool `json:"protected"`
+}
+
+type CreateGrantsRequest struct {
+	Grants []GrantInput `json:"grants" validate:"required"`
+}
+
+type PushRevisionRequest struct {
+	BaseRevision int    `json:"base_revision"`
+	KeyVersion   int    `json:"key_version"`
+	Ciphertext   []byte `json:"ciphertext" validate:"required"`
+	Signature    []byte `json:"signature" validate:"required"`
+}
+
+type CreateChangeRequestBody struct {
+	BaseRevision int    `json:"base_revision"`
+	KeyVersion   int    `json:"key_version"`
+	Ciphertext   []byte `json:"ciphertext" validate:"required"`
+	Signature    []byte `json:"signature" validate:"required"`
+	Note         string `json:"note"`
+}
+
+type RekeyRequest struct {
+	NewKeyVersion int                 `json:"new_key_version" validate:"required"`
+	Revision      *PushRevisionRequest `json:"revision"`
+	Grants        []GrantInput        `json:"grants" validate:"required"`
+}
+
+type EnvAccessResponse struct {
+	Env        string `json:"env"`
+	Permission string `json:"permission"`
+}
+
+type EnvironmentResponse struct {
 	Name          string    `json:"name"`
-	OwnerDeviceID string    `json:"owner_device_id"`
-	PeerCount     int       `json:"peer_count"`
-	HasSnapshot   bool      `json:"has_snapshot"`
-	CreatedAt     time.Time `json:"created_at"`
+	KeyVersion    int       `json:"key_version"`
+	HeadRevision  int       `json:"head_revision"`
+	Protected     bool      `json:"protected"`
+	RekeyRequired bool      `json:"rekey_required"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// VaultResponse is the detail view — includes peers, excludes snapshot/tokens.
-type VaultResponse struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	WorkspaceID   string         `json:"workspace_id"`
-	CreatedBy     string         `json:"created_by"`
-	OwnerDeviceID string         `json:"owner_device_id"`
-	Peers         []PeerResponse `json:"peers"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+type MemberResponse struct {
+	UserID      string              `json:"user_id"`
+	Name        string              `json:"name"`
+	Email       string              `json:"email"`
+	Role        string              `json:"role"`
+	EnvAccess   []EnvAccessResponse `json:"env_access"`
+	Fingerprint string              `json:"fingerprint,omitempty"`
+	HasKeys     bool                `json:"has_keys"`
 }
 
-// PeerResponse is a peer for API responses (optional account enrichment).
-type PeerResponse struct {
-	DeviceID        string    `json:"device_id"`
-	DeviceName      string    `json:"device_name"`
-	PublicKey       []byte    `json:"public_key"`
-	X25519PublicKey []byte    `json:"x25519_public_key"`
-	UserID          string    `json:"user_id,omitempty"`
-	Name            string    `json:"name,omitempty"`
-	Email           string    `json:"email,omitempty"`
-	JoinedAt        time.Time `json:"joined_at"`
+type VaultSummary struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Environments []EnvironmentResponse `json:"environments"`
+	MemberCount int                    `json:"member_count"`
+	MyRole      string                 `json:"my_role,omitempty"`
+	MyEnvAccess []EnvAccessResponse    `json:"my_env_access,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
-// --- collaborators ---
-
-type InviteCollaboratorRequest struct {
-	Email      string `json:"email" validate:"required,email"`
-	DeviceID   string `json:"device_id" validate:"required"`
-	Code       string `json:"code" validate:"required"`        // short ABCD-1234; emailed; stored hashed
-	WrappedDEK []byte `json:"wrapped_dek" validate:"required"` // DEK wrapped with the code
+type VaultDetail struct {
+	ID           string                 `json:"id"`
+	WorkspaceID  string                 `json:"workspace_id"`
+	Name         string                 `json:"name"`
+	CreatedBy    string                 `json:"created_by"`
+	Environments []EnvironmentResponse  `json:"environments"`
+	Members      []MemberResponse       `json:"members"`
+	MyRole       string                 `json:"my_role,omitempty"`
+	MyEnvAccess  []EnvAccessResponse    `json:"my_env_access,omitempty"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
-type CollaboratorResponse struct {
-	ID        string    `json:"id"`
-	VaultID   string    `json:"vault_id"`
-	UserID    string    `json:"user_id"`
-	Email     string    `json:"email"`
-	InvitedBy string    `json:"invited_by"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+type GrantResponse struct {
+	Env        string `json:"env"`
+	KeyVersion int    `json:"key_version"`
+	WrappedKey []byte `json:"wrapped_key"`
 }
 
-// JoinByCodeRequest — authenticated short-code join (email invite).
-type JoinByCodeRequest struct {
-	Code            string `json:"code" validate:"required"`
-	DeviceID        string `json:"device_id" validate:"required"`
-	DeviceName      string `json:"device_name" validate:"required"`
-	PublicKey       []byte `json:"public_key" validate:"required"`
-	X25519PublicKey []byte `json:"x25519_public_key" validate:"required"`
+type PendingGrant struct {
+	Env           string `json:"env"`
+	KeyVersion    int    `json:"key_version"`
+	RecipientType string `json:"recipient_type"`
+	RecipientID   string `json:"recipient_id"`
+	Label         string `json:"label"`
+	Email         string `json:"email,omitempty"`
+	KeyType       string `json:"key_type"`
+	PublicKey     []byte `json:"public_key"`
+	Fingerprint   string `json:"fingerprint"`
 }
 
-
-// --- snapshot ---
-// PushSnapshotRequest — device_id is the P2P peer id (must already be a peer).
-type PushSnapshotRequest struct {
-	DeviceID string `json:"device_id" validate:"required"`
-	Snapshot []byte `json:"snapshot" validate:"required"`
+type RevisionResponse struct {
+	VaultID                string    `json:"vault_id"`
+	Env                    string    `json:"env"`
+	Revision               int       `json:"revision"`
+	ParentRevision         int       `json:"parent_revision"`
+	KeyVersion             int       `json:"key_version"`
+	Ciphertext             []byte    `json:"ciphertext,omitempty"`
+	Signature              []byte    `json:"signature,omitempty"`
+	AuthorUserID           string    `json:"author_user_id,omitempty"`
+	AuthorEd25519PublicKey []byte    `json:"author_ed25519_public_key,omitempty"`
+	AuthorFingerprint      string    `json:"author_fingerprint,omitempty"`
+	CreatedAt              time.Time `json:"created_at,omitempty"`
 }
 
-// SnapshotResponse is what "lv sync" downloads.
-type SnapshotResponse struct {
-	Snapshot  []byte    `json:"snapshot"`
-	UpdatedAt time.Time `json:"updated_at"`
+type RevisionMeta struct {
+	Revision       int       `json:"revision"`
+	ParentRevision int       `json:"parent_revision"`
+	KeyVersion     int       `json:"key_version"`
+	AuthorUserID   string    `json:"author_user_id"`
+	AuthorEmail    string    `json:"author_email,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
-
-// --- tokens ---
-// CreateTokenRequest mirrors the old relay body (device_id + wrapped_dek + verifier).
-type CreateTokenRequest struct {
-	DeviceID   string     `json:"device_id" validate:"required"`
-	Name       string     `json:"name" validate:"required,max=100"`
-	ExpiresAt  *time.Time `json:"expires_at"`               // optional — nil means never
-	WrappedDEK []byte     `json:"wrapped_dek" validate:"required"`
-	Verifier   string     `json:"verifier" validate:"required"`
+func envResponses(envs []Environment) []EnvironmentResponse {
+	out := make([]EnvironmentResponse, 0, len(envs))
+	for _, e := range envs {
+		out = append(out, EnvironmentResponse{
+			Name: e.Name, KeyVersion: e.KeyVersion, HeadRevision: e.HeadRevision,
+			Protected: e.Protected, RekeyRequired: e.RekeyRequired, UpdatedAt: e.UpdatedAt,
+		})
+	}
+	return out
 }
 
-// TokenResponse is the public token view — never wrapped_dek or verifier.
-type TokenResponse struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at"`
+func accessResponses(a []EnvAccess) []EnvAccessResponse {
+	out := make([]EnvAccessResponse, 0, len(a))
+	for _, x := range a {
+		out = append(out, EnvAccessResponse{Env: x.Env, Permission: x.Permission})
+	}
+	return out
 }
 
-// ListTokensResponse keeps the old {"tokens":[...]} envelope inside .data.
-type ListTokensResponse struct {
-	Tokens []TokenResponse `json:"tokens"`
+func EmptyHead(vaultID, env string, keyVersion int) *RevisionResponse {
+	return &RevisionResponse{VaultID: vaultID, Env: env, Revision: 0, KeyVersion: keyVersion}
 }
 
-
-// --- join (public) ---
-// JoinRequest — token is the public token id; verifier proves knowledge of the secret.
-type JoinRequest struct {
-	Token           string `json:"token" validate:"required"`
-	Verifier        string `json:"verifier" validate:"required"`
-	DeviceID        string `json:"device_id" validate:"required"`
-	DeviceName      string `json:"device_name" validate:"required"`
-	PublicKey       []byte `json:"public_key" validate:"required"`
-	X25519PublicKey []byte `json:"x25519_public_key" validate:"required"`
+func RevisionAsResponse(r *RevisionDoc) *RevisionResponse {
+	return revisionResponse(r, true)
 }
 
-// JoinResponse gives the joiner the snapshot, current peers, and its sealed DEK.
-type JoinResponse struct {
-	VaultID     string `json:"vault_id"`
-	WorkspaceID string `json:"workspace_id"`
-	Snapshot    []byte `json:"snapshot"`
-	Peers       []Peer `json:"peers"`
-	WrappedDEK  []byte `json:"wrapped_dek"`
-	Message     string `json:"message,omitempty"` // "already a peer" when re-joining
-}
-
-
-// --- offline messages ---
-type SendMessageRequest struct {
-	ForDeviceID   string `json:"for_device_id" validate:"required"`
-	FromDeviceID  string `json:"from_device_id" validate:"required"`
-	FromPublicKey []byte `json:"from_public_key" validate:"required"`
-	Payload       []byte `json:"payload" validate:"required"`
-}
-
-type SendMessageResponse struct {
-	ID      string `json:"id"`
-	Success bool   `json:"success"`
-}
-
-type MessagesResponse struct {
-	Messages []PendingMessage `json:"messages"`
-	Count    int              `json:"count"`
+func revisionResponse(r *RevisionDoc, includeBlob bool) *RevisionResponse {
+	if r == nil {
+		return &RevisionResponse{}
+	}
+	out := &RevisionResponse{
+		VaultID: r.VaultID, Env: r.Env, Revision: r.Revision, ParentRevision: r.ParentRevision,
+		KeyVersion: r.KeyVersion, AuthorUserID: r.AuthorUserID,
+		AuthorEd25519PublicKey: r.AuthorEd25519PublicKey, AuthorFingerprint: r.AuthorFingerprint,
+		CreatedAt: r.CreatedAt,
+	}
+	if includeBlob {
+		out.Ciphertext = r.Ciphertext
+		out.Signature = r.Signature
+	}
+	return out
 }

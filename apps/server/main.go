@@ -9,6 +9,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("❌ Invalid config: %v", err)
+	}
 
 	// Create app — connects to MongoDB, sets up Fiber, registers routes
 	application, err := app.New(cfg)

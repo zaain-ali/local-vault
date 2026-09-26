@@ -79,7 +79,7 @@ var loginCmd = &cobra.Command{
 			return nil
 		}
 		ui.Success("logged in as %s <%s>", acct.Name, acct.Email)
-		return nil
+		return ensureAccountKeys(client, acct.ID, acct.Email)
 	},
 }
 
