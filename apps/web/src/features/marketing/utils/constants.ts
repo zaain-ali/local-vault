@@ -37,9 +37,9 @@ export const SECTION_IDS = {
 
 /** Off-site destinations. Everything else on this page is an in-page anchor. */
 export const EXTERNAL_LINKS = {
-	github: "https://github.com/zain-23/local-vault",
-	releases: "https://github.com/zain-23/local-vault/releases",
-	license: "https://github.com/zain-23/local-vault/blob/main/LICENSE",
+	github: "https://github.com/zaain-ali/local-vault",
+	releases: "https://github.com/zaain-ali/local-vault/releases",
+	license: "https://github.com/zaain-ali/local-vault/blob/main/LICENSE",
 } as const;
 
 /**
@@ -48,7 +48,7 @@ export const EXTERNAL_LINKS = {
  * links straight to GitHub instead of showing a made-up package-manager command.
  */
 const INSTALL_SH_COMMAND =
-	"curl -fsSL https://raw.githubusercontent.com/zain-23/local-vault/main/install.sh | bash";
+	"curl -fsSL https://raw.githubusercontent.com/zaain-ali/local-vault/main/install.sh | bash";
 
 export const INSTALL_PLATFORMS: InstallPlatform[] = [
 	{ id: "linux", label: "Linux", kind: "command", command: INSTALL_SH_COMMAND },
