@@ -37,7 +37,9 @@ type envelope struct {
 }
 
 type errorBody struct {
-	Error string `json:"error"`
+	Error        string `json:"error"`
+	Code         string `json:"code"`
+	HeadRevision int    `json:"head_revision"`
 }
 
 // do performs a request. When authed, it attaches the bearer token and, on 401,
@@ -63,6 +65,9 @@ func (c *Client) doWithHeaders(method, path string, body, out any, authed bool, 
 		}
 	}
 
+	if status == http.StatusNotModified {
+		return ErrNotModified
+	}
 	if status >= 400 {
 		var eb errorBody
 		_ = json.Unmarshal(respBody, &eb)
@@ -70,7 +75,7 @@ func (c *Client) doWithHeaders(method, path string, body, out any, authed bool, 
 		if msg == "" {
 			msg = fmt.Sprintf("server error (status %d)", status)
 		}
-		return &APIError{Status: status, Message: msg}
+		return &APIError{Status: status, Message: msg, Code: eb.Code, HeadRevision: eb.HeadRevision}
 	}
 
 	if out != nil {

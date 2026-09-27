@@ -45,25 +45,6 @@ type SnapshotResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type CreateTokenRequest struct {
-	DeviceID   string     `json:"device_id"`
-	Name       string     `json:"name"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
-	WrappedDEK []byte     `json:"wrapped_dek"`
-	Verifier   string     `json:"verifier"`
-}
-
-type TokenResponse struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at"`
-}
-
-type listTokensData struct {
-	Tokens []TokenResponse `json:"tokens"`
-}
-
 func (c *Client) CreateVault(workspaceID string, req CreateVaultRequest) (*CreateVaultResponse, error) {
 	var out CreateVaultResponse
 	path := fmt.Sprintf("/api/v1/workspaces/%s/vaults", workspaceID)
@@ -97,29 +78,6 @@ func (c *Client) PullSnapshot(workspaceID, vaultID, deviceID string) (*SnapshotR
 		return nil, err
 	}
 	return &out, nil
-}
-
-func (c *Client) CreateToken(workspaceID, vaultID string, req CreateTokenRequest) (*TokenResponse, error) {
-	var out TokenResponse
-	path := fmt.Sprintf("/api/v1/workspaces/%s/vaults/%s/tokens", workspaceID, vaultID)
-	if err := c.do(http.MethodPost, path, req, &out, true); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) ListTokens(workspaceID, vaultID string) ([]TokenResponse, error) {
-	var out listTokensData
-	path := fmt.Sprintf("/api/v1/workspaces/%s/vaults/%s/tokens", workspaceID, vaultID)
-	if err := c.do(http.MethodGet, path, nil, &out, true); err != nil {
-		return nil, err
-	}
-	return out.Tokens, nil
-}
-
-func (c *Client) RevokeToken(workspaceID, vaultID, tokenID string) error {
-	path := fmt.Sprintf("/api/v1/workspaces/%s/vaults/%s/tokens/%s", workspaceID, vaultID, tokenID)
-	return c.do(http.MethodDelete, path, nil, nil, true)
 }
 
 func (c *Client) RemovePeer(workspaceID, vaultID, deviceID string) error {

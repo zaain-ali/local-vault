@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/zain-23/local-vault/apps/cli/internal/account"
 	"github.com/zain-23/local-vault/apps/cli/internal/authstore"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
@@ -18,6 +19,7 @@ var logoutCmd = &cobra.Command{
 		if err := authstore.Clear(); err != nil {
 			return err
 		}
+		_ = account.Lock()
 		ui.Success("logged out")
 		return nil
 	},

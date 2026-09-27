@@ -4,6 +4,7 @@ import { create } from "zustand";
 // (and a matching entry in the provider's registry) to introduce a new modal.
 export type ModalType =
 	| "invite-member"
+	| "invite-vault-member"
 	| "change-role"
 	| "remove-member"
 	| "cancel-invite"

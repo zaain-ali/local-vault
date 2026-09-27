@@ -1,26 +1,25 @@
 import { Button } from "#/components/ui";
-import { useRevokeCollaborator } from "#/features/vaults/hooks";
+import { useRemoveVaultMember } from "#/features/vaults/hooks";
 
 export function RevokeInviteButton({
 	vaultId,
-	collaboratorId,
-	status,
+	userId,
 }: {
 	vaultId: string;
-	collaboratorId: string;
-	status: string;
+	userId: string;
+	collaboratorId?: string;
+	status?: string;
 }) {
-	const revoke = useRevokeCollaborator(vaultId);
-	if (status === "active" || status === "revoked") return null;
+	const remove = useRemoveVaultMember(vaultId);
 
 	return (
 		<Button
 			variant="ghost"
 			size="sm"
-			disabled={revoke.isPending}
-			onClick={() => revoke.mutate(collaboratorId)}
+			disabled={remove.isPending}
+			onClick={() => remove.mutate(userId)}
 		>
-			Revoke
+			Remove
 		</Button>
 	);
 }

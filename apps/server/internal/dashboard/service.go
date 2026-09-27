@@ -28,7 +28,7 @@ func (s *Service) Summary(ctx context.Context, workspaceID string) (*SummaryResp
 		Vaults: VaultCounts{
 			Total:        counts.Vaults.Total,
 			WithSnapshot: counts.Vaults.WithSnapshot,
-			PeerTotal:    counts.Vaults.PeerTotal,
+			MemberTotal:  counts.VaultMemberTotal,
 		},
 		Members:       CountTotal{Total: counts.MemberTotal},
 		Invites:       CountPending{Pending: counts.PendingInvites},

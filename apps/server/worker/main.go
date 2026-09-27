@@ -10,6 +10,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("❌ invalid config: %v", err)
+	}
 
 	// connect to rabbitMQ and open a channel
 	conn, ch, err := email.Connect(cfg.RabbitMQURL)

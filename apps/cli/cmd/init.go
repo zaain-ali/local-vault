@@ -1,19 +1,16 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/zain-23/local-vault/apps/cli/internal/api"
-	"github.com/zain-23/local-vault/apps/cli/internal/config"
-	"github.com/zain-23/local-vault/apps/cli/internal/identity"
-	"github.com/zain-23/local-vault/apps/cli/internal/session"
+	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
+	"github.com/zain-23/local-vault/apps/cli/internal/lvcrypto"
+	"github.com/zain-23/local-vault/apps/cli/internal/project"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
-	"github.com/zain-23/local-vault/apps/cli/internal/vault"
 )
 
 var (
@@ -23,10 +20,13 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a new vault in the current directory",
+	Short: "Create a vault and write .lv.toml in the current directory",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.Title("Initializing vault")
-
+		keys, err := requireAccount()
+		if err != nil {
+			return err
+		}
 		client, err := requireAPI()
 		if err != nil {
 			return err
@@ -34,7 +34,6 @@ var initCmd = &cobra.Command{
 		if _, err := client.Me(); err != nil {
 			return mapNotLoggedIn(err)
 		}
-
 		list, err := client.ListWorkspaces()
 		if err != nil {
 			return mapNotLoggedIn(err)
@@ -43,78 +42,50 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		passphrase, err := ui.Passphrase("Enter passphrase")
-		if err != nil {
-			return err
-		}
-		confirm, err := ui.Passphrase("Confirm passphrase")
-		if err != nil {
-			return err
-		}
-		if passphrase != confirm {
-			return fmt.Errorf("passphrases do not match")
-		}
-		if len(passphrase) < 8 {
-			return fmt.Errorf("passphrase must be at least 8 characters")
-		}
-
 		dir, err := os.Getwd()
 		if err != nil {
 			return err
 		}
-		lvDir := filepath.Join(dir, ".lv")
-
 		name := initName
 		if name == "" {
 			name = filepath.Base(dir)
 		}
-
-		if err := vault.Init(dir, passphrase); err != nil {
-			return err
-		}
-
-		id, err := identity.Load(lvDir)
+		vid, err := newVaultID()
 		if err != nil {
 			return err
 		}
-
+		envs := []string{"development", "staging", "production"}
+		grants := make([]map[string]any, 0, len(envs))
+		st := &localstore.State{WorkspaceID: workspaceID, VaultID: vid, Name: name, Envs: map[string]localstore.EnvState{}}
+		for _, env := range envs {
+			dek, err := lvcrypto.NewDEK()
+			if err != nil {
+				return err
+			}
+			wrapped, err := lvcrypto.WrapX25519(dek, keys.X25519Public, lvcrypto.GrantInfo(vid, env, 1))
+			if err != nil {
+				return err
+			}
+			grants = append(grants, map[string]any{"env": env, "key_version": 1, "wrapped_key": wrapped})
+			st.PutGrant(env, 1, wrapped)
+		}
 		ui.Step("registering vault on server...")
-		resp, err := client.CreateVault(workspaceID, api.CreateVaultRequest{
-			Name:            name,
-			OwnerDeviceID:   id.DeviceID,
-			OwnerName:       id.DeviceName,
-			PublicKey:       id.PublicKey,
-			X25519PublicKey: id.X25519PublicKey,
+		detail, err := client.CreateVaultV4(workspaceID, map[string]any{
+			"id": vid, "name": name, "environments": envs, "grants": grants,
 		})
 		if err != nil {
-			if mapped := mapNotLoggedIn(err); errors.Is(mapped, api.ErrNotLoggedIn) {
-				return mapped
-			}
-			return fmt.Errorf("server registration failed: %w\n  fix login/network, then remove .lv and re-run: lv init", err)
+			return mapNotLoggedIn(fmt.Errorf("server registration failed: %w", err))
 		}
-
-		cfg, err := config.Load(lvDir)
-		if err != nil {
+		if err := st.Save(); err != nil {
 			return err
 		}
-		cfg.WorkspaceID = workspaceID
-		cfg.VaultID = resp.VaultID
-		cfg.DeviceID = id.DeviceID
-		if err := config.Save(lvDir, cfg); err != nil {
+		if err := project.Write(dir, workspaceID, detail.ID, "development"); err != nil {
 			return err
 		}
-
-		if v, err := vault.Load(dir, passphrase); err == nil {
-			if err := session.Save(lvDir, v.GetKey()); err == nil {
-				ui.Success("auto-unlocked for 12 hours")
-			}
-		}
-
-		ui.Success("vault initialized — %s", resp.VaultID)
+		ui.Success("vault initialized — %s", detail.ID)
+		ui.Hint("commit .lv.toml")
 		ui.Hint("lv add DATABASE_URL=postgres://...")
 		ui.Hint("lv push")
-		ui.Hint("lv invite teammate@company.com")
 		return nil
 	},
 }

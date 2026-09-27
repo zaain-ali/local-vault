@@ -24,13 +24,30 @@ export function vaultQuery(workspaceId: string, vaultId: string) {
 	});
 }
 
-export function vaultCollaboratorsQuery(workspaceId: string, vaultId: string) {
+export function pendingGrantsQuery(workspaceId: string, vaultId: string) {
 	return queryOptions({
-		queryKey: VAULT_KEYS.collaborators(workspaceId, vaultId),
+		queryKey: VAULT_KEYS.pendingGrants(workspaceId, vaultId),
 		queryFn: async () => {
-			const res = await vaultService.listCollaborators(workspaceId, vaultId);
+			const res = await vaultService.pendingGrants(workspaceId, vaultId);
 			return res.data;
 		},
-		staleTime: 15_000,
+		staleTime: 10_000,
+	});
+}
+
+export function changeRequestsQuery(
+	workspaceId: string,
+	vaultId: string,
+	envs: string[],
+) {
+	return queryOptions({
+		queryKey: VAULT_KEYS.changeRequests(workspaceId, vaultId),
+		queryFn: async () => {
+			const lists = await Promise.all(
+				envs.map((env) => vaultService.changeRequests(workspaceId, vaultId, env)),
+			);
+			return lists.flatMap((r) => r.data ?? []);
+		},
+		staleTime: 10_000,
 	});
 }

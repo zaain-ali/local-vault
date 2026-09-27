@@ -14,5 +14,8 @@ type EmailJob struct {
 	To   string    `json:"to"`
 	Name string    `json:"name"`
 	URL  string    `json:"url"`
-	Code string    `json:"code,omitempty"` // short vault join code (email body)
+
+	// vault_collaborator_invite: Name = vault name
+	Inviter string `json:"inviter,omitempty"` // who granted access (display name or email)
+	Envs    string `json:"envs,omitempty"`    // comma-separated environment names
 }

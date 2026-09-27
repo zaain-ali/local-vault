@@ -1,12 +1,20 @@
 package config
 
 import (
+	"errors"
+	"log"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
 )
+
+// devJWTSecret is the development-only fallback; Validate rejects it in production.
+const devJWTSecret = "dev-secret-change-in-production"
+
+// minJWTSecretLen — HS256 keys shorter than the hash output (32 bytes) are weak.
+const minJWTSecretLen = 32
 
 type Config struct {
 	Port string
@@ -45,14 +53,19 @@ func Load() Config {
 	_ = godotenv.Load("apps/server/.env")
 	_ = godotenv.Load(".env")
 
+	env := getEnv("ENV", "development")
+	if os.Getenv("JWT_SECRET") == "" && !isProduction(env) {
+		log.Println("⚠️ JWT_SECRET not set — using insecure dev fallback")
+	}
+
 	return Config{
 		Port: getEnv("PORT", "8080"),
-		Env:  getEnv("ENV", "development"),
+		Env:  env,
 
 		MongoURI: getEnv("MONGODB_URI", "mongodb://localhost:27017"),
 		MongoDB:  getEnv("MONGODB_DATABASE", "localvault"),
 
-		JWTSecret:        getEnv("JWT_SECRET", "dev-secret-change-in-production"),
+		JWTSecret:        getEnv("JWT_SECRET", devJWTSecret),
 		JWTAccessExpiry:  parseDuration(getEnv("JWT_ACCESS_EXPIRY", "15m")),
 		JWTRefreshExpiry: parseDuration(getEnv("JWT_REFRESH_EXPIRY", "720h")),
 
@@ -66,11 +79,32 @@ func Load() Config {
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
 		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
 
-		// Prefer RABBITMQ_URL; fall back to Heroku CloudAMQP's CLOUDAMQP_URL
-		RabbitMQURL: getEnv("RABBITMQ_URL", getEnv("CLOUDAMQP_URL", "amqp://guest:guest@localhost:5672/")),
+		// Prefer RABBITMQ_URL; fall back to Heroku CloudAMQP's CLOUDAMQP_URL.
+		// Empty means "no broker": email + cross-instance events are disabled.
+		RabbitMQURL: getEnv("RABBITMQ_URL", getEnv("CLOUDAMQP_URL", "")),
 		EmailMaxRetries:	parseInt(getEnv("EMAIL_MAX_RETRIES", "5")),
 		EmailRetryDelay: 	parseDuration(getEnv("EMAIL_RETRY_DELAY", "30s")),
 	}
+}
+
+// Validate rejects unsafe settings in production — call right after Load().
+func (c Config) Validate() error {
+	if !isProduction(c.Env) {
+		return nil
+	}
+	switch {
+	case c.JWTSecret == "":
+		return errors.New("JWT_SECRET is required in production")
+	case c.JWTSecret == devJWTSecret:
+		return errors.New("JWT_SECRET must not be the dev default in production")
+	case len(c.JWTSecret) < minJWTSecretLen:
+		return errors.New("JWT_SECRET must be at least 32 bytes in production")
+	}
+	return nil
+}
+
+func isProduction(env string) bool {
+	return env == "production" || env == "prod"
 }
 
 func getEnv(key, fallback string) string {

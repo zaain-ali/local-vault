@@ -9,7 +9,7 @@
     text-align: center;
   "
 >
-  Collaborate on {{.Name}}
+  You have access to {{.Name}}
 </h1>
 <p
   style="
@@ -20,22 +20,8 @@
     text-align: center;
   "
 >
-  Sign in to the CLI with this email, then join with your invite code:
-</p>
-<p
-  style="
-    margin: 0 0 12px;
-    font-family:
-      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-      'Courier New', monospace;
-    font-size: 22px;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-    color: #e5b567;
-    text-align: center;
-  "
->
-  {{.Code}}
+  {{.Inviter}} gave you access to vault {{.Name}} ({{.Envs}}). Run
+  <code>lv login</code> then <code>lv link</code> in your project.
 </p>
 <table
   role="presentation"
@@ -57,11 +43,11 @@
           ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
           'Liberation Mono', 'Courier New', monospace;
         font-size: 13px;
-        color: #f5f2ed;
+        color: #e5b567;
         text-align: center;
       "
     >
-      lv join {{.Code}}
+      lv login &amp;&amp; lv link
     </td>
   </tr>
 </table>
@@ -74,6 +60,7 @@
     text-align: center;
   "
 >
-  You must already be a member of the workspace. This code expires in 7 days.
+  Secrets are end-to-end encrypted. A teammate who already has access will
+  share the keys with your account automatically.
 </p>
 {{end}}

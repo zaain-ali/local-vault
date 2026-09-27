@@ -1,3 +1,7 @@
 export * from "./useVault.ts";
-export { useRevokeCollaborator } from "./useVaultCollaboratorMutations.ts";
+export {
+	useAddVaultMember,
+	useRemoveVaultMember,
+	useReviewChangeRequest,
+} from "./useVaultCollaboratorMutations.ts";
 export * from "./useVaults.ts";

@@ -5,7 +5,8 @@ import type { AuditEvent } from "#/features/audit/api";
 export interface VaultCounts {
 	total: number;
 	with_snapshot: number;
-	peer_total: number;
+	/** Vault memberships across the workspace, not distinct people. */
+	member_total: number;
 }
 
 export interface CountTotal {

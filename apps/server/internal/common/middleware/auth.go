@@ -74,3 +74,35 @@ func GetUser(c *fiber.Ctx) AuthUser {
 	// .(AuthUser) is a type assertion — converts from any to AuthUser
 	return c.Locals("user").(AuthUser)
 }
+
+// MachineIdentity is stashed by MachineAuth.
+type MachineIdentity struct {
+	ID          string
+	WorkspaceID string
+	VaultID     string
+	Env         string
+}
+
+// MachineAuth accepts type=machine JWTs for /machine/* routes.
+func MachineAuth(jwtService *jwt.Service) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		header := c.Get("Authorization")
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			return apperror.New(401, "invalid authorization format, use: Bearer <token>")
+		}
+		claims, err := jwtService.ValidateToken(parts[1])
+		if err != nil || claims.Type != "machine" {
+			return apperror.New(401, "invalid or expired token")
+		}
+		c.Locals("machine", MachineIdentity{
+			ID: claims.Subject, WorkspaceID: claims.WorkspaceID,
+			VaultID: claims.VaultID, Env: claims.Env,
+		})
+		return c.Next()
+	}
+}
+
+func GetMachine(c *fiber.Ctx) MachineIdentity {
+	return c.Locals("machine").(MachineIdentity)
+}

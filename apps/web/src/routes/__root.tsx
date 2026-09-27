@@ -12,6 +12,7 @@ import { DEFAULT_PAGE_META } from "#/constants";
 import { seo } from "#/utils/seo.ts";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import { Provider } from "../integrations/tanstack-query/root-provider";
+import { VercelAnalytics } from "../integrations/analytics/Analytics";
 import appCss from "../styles.css?url";
 
 interface MyRouterContext {
@@ -81,6 +82,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<HeadContent />
 			</head>
 			<body className="font-sans antialiased wrap-anywhere selection:bg-[rgba(79,184,178,0.24)]">
+				<VercelAnalytics />
 				<Provider queryClient={queryClient}>
 					<NuqsAdapter>{children}</NuqsAdapter>
 				</Provider>

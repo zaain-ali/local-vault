@@ -3,6 +3,7 @@ import { Dialog } from "#/components/ui";
 import { CancelInviteModal } from "#/features/members/modals/CancelInviteModal.tsx";
 import { ChangeRoleModal } from "#/features/members/modals/ChangeRoleModal.tsx";
 import { InviteMemberModal } from "#/features/members/modals/InviteMemberModal.tsx";
+import { InviteVaultMemberModal } from "#/features/vaults/modals/InviteVaultMemberModal.tsx";
 import { RemoveMemberModal } from "#/features/members/modals/RemoveMemberModal.tsx";
 import { CreateWorkspaceModal } from "#/features/onboarding/modals/CreateWorkspaceModal.tsx";
 import { type ModalType, useModalStore } from "#/stores/useModalStore";
@@ -11,6 +12,7 @@ import { type ModalType, useModalStore } from "#/stores/useModalStore";
 // never imports Dialog; it just calls openModal({ type }).
 const MODAL_REGISTRY: Record<ModalType, ComponentType> = {
 	"invite-member": InviteMemberModal,
+	"invite-vault-member": InviteVaultMemberModal,
 	"change-role": ChangeRoleModal,
 	"remove-member": RemoveMemberModal,
 	"cancel-invite": CancelInviteModal,

@@ -12,31 +12,18 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"time"
 )
 
-// Domain-separation prefixes. The wrap key and the verifier are both
-// SHA256 over the token secret, but with different prefixes so the
-// server-stored verifier can never be used to derive the wrap key.
-const (
-	wrapKeyPrefix  = "lv-wrap-v1"
-	verifierPrefix = "lv-auth-v1"
-)
+// Domain-separation prefix for the wrap key derived from the invite secret.
+const wrapKeyPrefix = "lv-wrap-v1"
 
 // deriveWrapKey returns the 32-byte AES key used to wrap the DEK.
 func deriveWrapKey(secret []byte) [32]byte {
 	return sha256.Sum256(append([]byte(wrapKeyPrefix), secret...))
-}
-
-// DeriveVerifier returns a hex string the server stores to authenticate a
-// join request without ever learning the token secret or the wrap key.
-func DeriveVerifier(secret []byte) string {
-	sum := sha256.Sum256(append([]byte(verifierPrefix), secret...))
-	return hex.EncodeToString(sum[:])
 }
 
 // WrapKey encrypts the DEK with a key derived from the token secret.
