@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zain-23/local-vault/apps/cli/internal/account"
+	"github.com/zain-23/local-vault/apps/cli/internal/api"
 	"github.com/zain-23/local-vault/apps/cli/internal/knownkeys"
 	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
 	"github.com/zain-23/local-vault/apps/cli/internal/lvcrypto"
@@ -88,9 +89,11 @@ var rekeyCmd = &cobra.Command{
 			}
 		}
 
+		// Only members entitled to this environment get the new key; the
+		// server rejects grants for anyone else.
 		userIDs := make([]string, 0, len(detail.Members))
 		for _, m := range detail.Members {
-			if m.HasKeys {
+			if m.HasKeys && hasEnvAccess(m.EnvAccess, v.Env) {
 				userIDs = append(userIDs, m.UserID)
 			}
 		}
@@ -160,6 +163,16 @@ func checkRekeyable(env string, st localstore.EnvState) error {
 		return fmt.Errorf("%s has unpushed local changes — run: lv push before rekey", env)
 	}
 	return nil
+}
+
+// hasEnvAccess reports whether a member's access list covers env.
+func hasEnvAccess(access []api.EnvAccess, env string) bool {
+	for _, a := range access {
+		if a.Env == env && a.Permission != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func joinIDs(ids []string) string {

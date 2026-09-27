@@ -36,11 +36,7 @@ var machineTokenCmd = &cobra.Command{
 		if err := v.syncGrants(); err != nil {
 			return err
 		}
-		st := v.State.Envs[v.Env]
-		kv := st.KeyVersion
-		if kv == 0 {
-			kv = 1
-		}
+		kv := v.State.LatestKeyVersion(v.Env)
 		dek, err := v.State.DEK(v.Env, kv)
 		if err != nil {
 			return err
@@ -88,11 +84,7 @@ var machineOIDCCmd = &cobra.Command{
 		if err := v.syncGrants(); err != nil {
 			return err
 		}
-		st := v.State.Envs[v.Env]
-		kv := st.KeyVersion
-		if kv == 0 {
-			kv = 1
-		}
+		kv := v.State.LatestKeyVersion(v.Env)
 		dek, err := v.State.DEK(v.Env, kv)
 		if err != nil {
 			return err

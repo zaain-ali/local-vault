@@ -102,22 +102,47 @@ func (s *Service) Create(ctx context.Context, workspaceID, vaultID, userID, emai
 	default:
 		return nil, apperror.New(400, "kind must be token or oidc")
 	}
-	if err := s.store.Insert(ctx, m); err != nil {
+	// Validate the initial grant before touching the database so a bad wrapped
+	// key or a stale key version never leaves a half-created machine behind.
+	var grants []vault.Grant
+	if len(req.Grant.WrappedKey) > 0 {
+		current := a.Vault.Env(req.Env).KeyVersion
+		kv := req.Grant.KeyVersion
+		if kv == 0 {
+			kv = current
+		}
+		if kv != current {
+			return nil, apperror.WithCode(409, "stale_key_version", "grant key_version is not current — pull and retry")
+		}
+		if err := vault.ValidateWrappedKey(vault.RecipientMachine, m.KeyType, req.Grant.WrappedKey); err != nil {
+			return nil, err
+		}
+		grants = []vault.Grant{{
+			ID: id.Generate("gr_", 12), VaultID: vaultID, Env: req.Env, KeyVersion: kv,
+			RecipientType: vault.RecipientMachine, RecipientID: mid, WrappedKey: req.Grant.WrappedKey,
+			GrantedBy: userID, CreatedAt: now,
+		}}
+	}
+	err = s.vault.Store.WithTx(ctx, func(ctx context.Context) error {
+		if err := s.store.Insert(ctx, m); err != nil {
+			return err
+		}
+		if len(grants) == 0 {
+			return nil
+		}
+		if err := s.vault.Store.InsertGrants(ctx, grants); err != nil {
+			// Without a transaction the machine row is already committed;
+			// remove it so the API never reports a machine that can't get its key.
+			_ = s.store.Delete(ctx, mid)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		if err == ErrExists {
 			return nil, apperror.New(409, "machine id already exists")
 		}
 		return nil, apperror.ErrInternal
-	}
-	if len(req.Grant.WrappedKey) > 0 {
-		kv := req.Grant.KeyVersion
-		if kv == 0 {
-			kv = a.Vault.Env(req.Env).KeyVersion
-		}
-		_ = s.vault.Store.InsertGrants(ctx, []vault.Grant{{
-			ID: id.Generate("gr_", 12), VaultID: vaultID, Env: req.Env, KeyVersion: kv,
-			RecipientType: vault.RecipientMachine, RecipientID: mid, WrappedKey: req.Grant.WrappedKey,
-			GrantedBy: userID, CreatedAt: now,
-		}})
 	}
 	s.audit.Record(ctx, audit.Entry{
 		WorkspaceID: workspaceID, Action: "vault.machine.created",

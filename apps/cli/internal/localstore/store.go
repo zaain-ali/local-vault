@@ -101,6 +101,11 @@ func (s *State) DEK(env string, kv int) ([]byte, error) {
 	return nil, ErrNoGrant
 }
 
+// PutGrant records a wrapped key for one key version. It deliberately does not
+// advance KeyVersion: that field is the version the local Working/Base blobs
+// are sealed under, and only SetBase (after decrypting a revision at the new
+// version) may move it. Adopting a newer grant early would make Working/Base
+// unreadable until the next pull, which then drops dirty edits.
 func (s *State) PutGrant(env string, kv int, wrapped []byte) {
 	st := s.Envs[env]
 	found := false
@@ -113,10 +118,23 @@ func (s *State) PutGrant(env string, kv int, wrapped []byte) {
 	if !found {
 		st.Grants = append(st.Grants, Grant{KeyVersion: kv, WrappedKey: wrapped})
 	}
-	if st.KeyVersion == 0 || kv > st.KeyVersion {
+	if st.KeyVersion == 0 {
 		st.KeyVersion = kv
 	}
 	s.Envs[env] = st
+}
+
+// LatestKeyVersion is the newest key version this account holds a grant for,
+// or 0. Use it when wrapping the DEK for someone else (e.g. a new machine),
+// where the server's current version matters rather than the local blobs'.
+func (s *State) LatestKeyVersion(env string) int {
+	kv := 0
+	for _, g := range s.Envs[env].Grants {
+		if g.KeyVersion > kv {
+			kv = g.KeyVersion
+		}
+	}
+	return kv
 }
 
 func (s *State) Working(env string) (*lvcrypto.Snapshot, error) {

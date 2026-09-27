@@ -43,8 +43,11 @@ func (v *vaultCtx) pull(resolveRemote bool) (*lvcrypto.Snapshot, []string, error
 		if werr != nil {
 			snap = &lvcrypto.Snapshot{Version: lvcrypto.SnapshotVersion}
 		}
+		st := v.State.Envs[v.Env]
 		v.State.SetBase(v.Env, 0, max(head.KeyVersion, 1), nil)
-		return snap, nil, v.State.Save()
+		// SetBase may have moved KeyVersion (env rekeyed before any push);
+		// reseal the working copy under it so it stays readable.
+		return snap, nil, v.State.SetWorking(v.Env, snap, st.Dirty)
 	}
 	if err := knownkeys.Check(head.AuthorUserID, head.AuthorFingerprint); err != nil {
 		return nil, nil, err
@@ -132,7 +135,7 @@ func (v *vaultCtx) push(note string) error {
 			ui.Success("change request submitted for %s (protected)", v.Env)
 			return nil
 		}
-		if api.IsCode(err, "conflict") {
+		if api.IsCode(err, "conflict") || api.IsCode(err, "stale_key_version") {
 			ui.Warn("remote moved — pulling and merging")
 			if _, conflicts, perr := v.pull(false); perr != nil {
 				return perr

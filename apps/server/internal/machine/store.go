@@ -72,6 +72,13 @@ func (s *Store) Revoke(ctx context.Context, workspaceID, vaultID, id, reason str
 	return res.MatchedCount == 1, nil
 }
 
+// Delete removes a machine document outright. Used to undo a create whose
+// initial grant could not be stored on a deployment without transactions.
+func (s *Store) Delete(ctx context.Context, id string) error {
+	_, err := s.col.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 func (s *Store) Touch(ctx context.Context, id string) {
 	now := time.Now()
 	_, _ = s.col.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"last_used_at": now}})

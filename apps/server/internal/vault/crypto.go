@@ -70,6 +70,14 @@ func validateCiphertext(ciphertext, signature []byte) *apperror.Error {
 	return nil
 }
 
+// ValidateWrappedKey is validateWrappedKey for other domains (machine create).
+func ValidateWrappedKey(recipientType, machineKeyType string, wk []byte) error {
+	if err := validateWrappedKey(recipientType, machineKeyType, wk); err != nil {
+		return err
+	}
+	return nil
+}
+
 // validateWrappedKey checks the scheme tag and length expected for a recipient
 // (recipientType user, or a machine's key_type).
 func validateWrappedKey(recipientType, machineKeyType string, wk []byte) *apperror.Error {

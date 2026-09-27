@@ -70,11 +70,7 @@ var inviteCmd = &cobra.Command{
 		}
 		var grants []api.GrantIn
 		for _, e := range access {
-			st := v.State.Envs[e.Env]
-			kv := st.KeyVersion
-			if kv == 0 {
-				kv = 1
-			}
+			kv := v.State.LatestKeyVersion(e.Env)
 			wrapped, err := v.wrapGrant(e.Env, kv, keys[0].X25519PublicKey)
 			if err != nil {
 				ui.Warn("could not wrap %s: %v", e.Env, err)

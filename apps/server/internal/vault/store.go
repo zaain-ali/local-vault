@@ -79,6 +79,13 @@ func NewStore(db *mongo.Database) *Store {
 // withTx runs fn in a transaction when the deployment supports it (replica set
 // / mongos). On a standalone mongod it runs fn directly, so fn must order its
 // writes to leave a consistent state if interrupted.
+// WithTx exposes withTx to other domains that write alongside vault grants
+// (e.g. machine creation). Collections touched through the callback's ctx join
+// the same transaction where the deployment supports one.
+func (s *Store) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return s.withTx(ctx, fn)
+}
+
 func (s *Store) withTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	if s.noTx.Load() {
 		return fn(ctx)

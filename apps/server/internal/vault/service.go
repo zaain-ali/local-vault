@@ -819,7 +819,15 @@ func (s *Service) PushRevision(ctx context.Context, workspaceID, vaultID, env, u
 		AuthorUserID: userID, AuthorEd25519PublicKey: pub.Ed25519PublicKey,
 		AuthorFingerprint: pub.Fingerprint, IdempotencyKey: idem, CreatedAt: time.Now(),
 	}
-	if err := s.Store.InsertRevision(ctx, doc); err != nil {
+	// Insert + head bump must land together: a revision behind a stale head is
+	// invisible to pulls while the client believes the push succeeded.
+	err = s.Store.withTx(ctx, func(ctx context.Context) error {
+		if err := s.Store.InsertRevision(ctx, doc); err != nil {
+			return err
+		}
+		return s.Store.BumpHead(ctx, vaultID, env, rev)
+	})
+	if err != nil {
 		if err == ErrRevisionExists {
 			head, _ := s.Store.FindVault(ctx, vaultID)
 			hr := req.BaseRevision
@@ -832,7 +840,6 @@ func (s *Service) PushRevision(ctx context.Context, workspaceID, vaultID, env, u
 		}
 		return nil, apperror.ErrInternal
 	}
-	_ = s.Store.BumpHead(ctx, vaultID, env, rev)
 	s.audit.Record(ctx, audit.Entry{
 		WorkspaceID: workspaceID, Action: "vault.revision.pushed",
 		TargetType: "vault", TargetID: vaultID, Details: map[string]any{"env": env, "revision": rev},
@@ -961,14 +968,19 @@ func (s *Service) ApproveChangeRequest(ctx context.Context, workspaceID, vaultID
 		AuthorUserID: cr.AuthorUserID, AuthorEd25519PublicKey: cr.AuthorEd25519PublicKey,
 		AuthorFingerprint: cr.AuthorFingerprint, ChangeRequestID: cr.ID, CreatedAt: time.Now(),
 	}
-	if err := s.Store.InsertRevision(ctx, doc); err != nil {
+	err = s.Store.withTx(ctx, func(ctx context.Context) error {
+		if err := s.Store.InsertRevision(ctx, doc); err != nil {
+			return err
+		}
+		return s.Store.BumpHead(ctx, vaultID, env, rev)
+	})
+	if err != nil {
 		if err == ErrRevisionExists {
 			_, _ = s.Store.TransitionChangeRequest(ctx, crID, CRApproved, CRStale, userID)
 			return nil, apperror.WithCode(409, "stale", "head moved; change request is stale")
 		}
 		return nil, apperror.ErrInternal
 	}
-	_ = s.Store.BumpHead(ctx, vaultID, env, rev)
 	s.audit.Record(ctx, audit.Entry{
 		WorkspaceID: workspaceID, Action: "vault.change_request.approved",
 		TargetType: "vault", TargetID: vaultID, Details: map[string]any{"id": crID, "revision": rev},
@@ -1065,6 +1077,15 @@ func (s *Service) Rekey(ctx context.Context, workspaceID, vaultID, env, userID, 
 	}
 	_ = missing
 
+	// Every submitted grant must target an entitled recipient. Extras would be
+	// stored and later served by grants/mine, handing the DEK to a member who
+	// was deliberately excluded from this environment.
+	allowed := map[string]bool{}
+	for _, rec := range entitled {
+		if rec.keyType != KeyTypeToken {
+			allowed[rec.typ+"|"+rec.id] = true
+		}
+	}
 	now := time.Now()
 	docs := make([]Grant, 0, len(req.Grants))
 	ids := make([]string, 0, len(req.Grants))
@@ -1072,6 +1093,10 @@ func (s *Service) Rekey(ctx context.Context, workspaceID, vaultID, env, userID, 
 		rt := g.RecipientType
 		if rt == "" {
 			rt = RecipientUser
+		}
+		if !allowed[rt+"|"+g.RecipientID] {
+			return nil, apperror.WithCode(400, "not_entitled", "recipient is not entitled to this environment").
+				With("recipient_type", rt).With("recipient_id", g.RecipientID)
 		}
 		gid := id.Generate("gr_", 12)
 		ids = append(ids, gid)
