@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install the LocalVault CLI (`lv`) from the latest GitHub Release.
-# Usage: curl -fsSL https://raw.githubusercontent.com/zain-23/local-vault/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/zaain-ali/local-vault/main/install.sh | bash
 set -euo pipefail
 
-REPO="zain-23/local-vault"
+REPO="zaain-ali/local-vault"
 RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
 
 # Brand colors (apps/cli/internal/ui/theme.go)

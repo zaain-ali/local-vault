@@ -8,21 +8,21 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zain-23/local-vault/releases/latest"><img src="https://img.shields.io/github/v/release/zain-23/local-vault?style=flat-square&label=latest" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/zain-23/local-vault?style=flat-square" alt="MIT License" /></a>
-  <a href="https://github.com/zain-23/local-vault/releases"><img src="https://img.shields.io/github/downloads/zain-23/local-vault/total?style=flat-square" alt="Downloads" /></a>
+  <a href="https://github.com/zaain-ali/local-vault/releases/latest"><img src="https://img.shields.io/github/v/release/zaain-ali/local-vault?style=flat-square&label=latest" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/zaain-ali/local-vault?style=flat-square" alt="MIT License" /></a>
+  <a href="https://github.com/zaain-ali/local-vault/releases"><img src="https://img.shields.io/github/downloads/zaain-ali/local-vault/total?style=flat-square" alt="Downloads" /></a>
 </p>
 
 ---
 
 ## Install
 
-Prebuilt `lv` binaries ship on every [GitHub Release](https://github.com/zain-23/local-vault/releases/latest) for Linux, macOS, and Windows.
+Prebuilt `lv` binaries ship on every [GitHub Release](https://github.com/zaain-ali/local-vault/releases/latest) for Linux, macOS, and Windows.
 
 ### One-liner (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zain-23/local-vault/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zaain-ali/local-vault/main/install.sh | bash
 ```
 
 Installs the latest `lv` to `/usr/local/bin` (or `~/.local/bin`). Override with `BIN_DIR=/path bash`.
@@ -33,14 +33,14 @@ Pick the archive for your platform, extract `lv`, and put it on your `PATH`:
 
 | Platform | Archive |
 | -------- | ------- |
-| Linux x86_64 | [`lv_linux_amd64.tar.gz`](https://github.com/zain-23/local-vault/releases/latest/download/lv_linux_amd64.tar.gz) |
-| Linux ARM64 | [`lv_linux_arm64.tar.gz`](https://github.com/zain-23/local-vault/releases/latest/download/lv_linux_arm64.tar.gz) |
-| macOS Intel | [`lv_darwin_amd64.tar.gz`](https://github.com/zain-23/local-vault/releases/latest/download/lv_darwin_amd64.tar.gz) |
-| macOS Apple Silicon | [`lv_darwin_arm64.tar.gz`](https://github.com/zain-23/local-vault/releases/latest/download/lv_darwin_arm64.tar.gz) |
+| Linux x86_64 | [`lv_linux_amd64.tar.gz`](https://github.com/zaain-ali/local-vault/releases/latest/download/lv_linux_amd64.tar.gz) |
+| Linux ARM64 | [`lv_linux_arm64.tar.gz`](https://github.com/zaain-ali/local-vault/releases/latest/download/lv_linux_arm64.tar.gz) |
+| macOS Intel | [`lv_darwin_amd64.tar.gz`](https://github.com/zaain-ali/local-vault/releases/latest/download/lv_darwin_amd64.tar.gz) |
+| macOS Apple Silicon | [`lv_darwin_arm64.tar.gz`](https://github.com/zaain-ali/local-vault/releases/latest/download/lv_darwin_arm64.tar.gz) |
 
 ```bash
 # Example: Linux amd64
-curl -fsSL https://github.com/zain-23/local-vault/releases/latest/download/lv_linux_amd64.tar.gz \
+curl -fsSL https://github.com/zaain-ali/local-vault/releases/latest/download/lv_linux_amd64.tar.gz \
   | tar -xzf - lv
 sudo mv lv /usr/local/bin/lv
 lv --help
@@ -48,7 +48,7 @@ lv --help
 
 ```bash
 # Example: macOS Apple Silicon
-curl -fsSL https://github.com/zain-23/local-vault/releases/latest/download/lv_darwin_arm64.tar.gz \
+curl -fsSL https://github.com/zaain-ali/local-vault/releases/latest/download/lv_darwin_arm64.tar.gz \
   | tar -xzf - lv
 sudo mv lv /usr/local/bin/lv
 lv --help
@@ -56,7 +56,7 @@ lv --help
 
 ### Windows
 
-1. Download [`lv_windows_amd64.zip`](https://github.com/zain-23/local-vault/releases/latest/download/lv_windows_amd64.zip) (or `lv_windows_arm64.zip`).
+1. Download [`lv_windows_amd64.zip`](https://github.com/zaain-ali/local-vault/releases/latest/download/lv_windows_amd64.zip) (or `lv_windows_arm64.zip`).
 2. Unzip and add `lv.exe` to your `PATH`.
 3. Open a new terminal and run `lv --help`.
 
@@ -74,7 +74,7 @@ lv --help
 ### From source
 
 ```bash
-git clone https://github.com/zain-23/local-vault
+git clone https://github.com/zaain-ali/local-vault
 cd local-vault
 go build -o lv .
 # or: go build -o lv ./apps/cli
@@ -332,9 +332,9 @@ task test:go           # or: go test ./...
 <p align="center">
   <em>Stop sharing secrets over Slack.</em><br/><br/>
   Licensed under the <a href="LICENSE">MIT License</a>.<br/><br/>
-  <a href="https://github.com/zain-23/local-vault/issues">Report a bug</a>
+  <a href="https://github.com/zaain-ali/local-vault/issues">Report a bug</a>
   ·
-  <a href="https://github.com/zain-23/local-vault/issues">Request a feature</a>
+  <a href="https://github.com/zaain-ali/local-vault/issues">Request a feature</a>
   ·
-  <a href="https://github.com/zain-23/local-vault/releases/latest">Download latest</a>
+  <a href="https://github.com/zaain-ali/local-vault/releases/latest">Download latest</a>
 </p>

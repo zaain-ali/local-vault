@@ -49,7 +49,7 @@ changelog:
 
 release:
   github:
-    owner: zain-23
+    owner: zaain-ali
     name: local-vault
   # Tags like v1.2.3-dev.1 are marked as GitHub prereleases automatically.
   prerelease: auto
