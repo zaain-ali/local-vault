@@ -131,10 +131,9 @@ type Machine struct {
 	VaultID       string     `bson:"vault_id"`
 	Env           string     `bson:"env"`
 	Name          string     `bson:"name"`
-	Kind          string     `bson:"kind"`     // token | oidc | aws
-	KeyType       string     `bson:"key_type"` // token | x25519 | rsa-oaep-256
+	Kind          string     `bson:"kind"`     // token | oidc
+	KeyType       string     `bson:"key_type"` // token | x25519
 	PublicKey     []byte     `bson:"public_key,omitempty"`
-	KeyRef        string     `bson:"key_ref,omitempty"`
 	ExpiresAt     *time.Time `bson:"expires_at,omitempty"`
 	Revoked       bool       `bson:"revoked"`
 	RevokedReason string     `bson:"revoked_reason,omitempty"`
@@ -167,7 +166,6 @@ const (
 const (
 	KeyTypeToken  = "token"
 	KeyTypeX25519 = "x25519"
-	KeyTypeRSA    = "rsa-oaep-256"
 )
 
 // Change request statuses.

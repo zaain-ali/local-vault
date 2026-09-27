@@ -26,8 +26,8 @@ function buildStats(summary: DashboardSummary): Stat[] {
 					: `${vaults.with_snapshot} with snapshot`,
 		},
 		{
-			label: "Peers",
-			value: String(vaults.peer_total),
+			label: "Vault members",
+			value: String(vaults.member_total),
 		},
 		{
 			label: "Members",

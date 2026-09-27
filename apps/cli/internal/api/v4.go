@@ -244,7 +244,6 @@ type MachineSecrets struct {
 	KeyVersion  int       `json:"key_version"`
 	KeyType     string    `json:"key_type"`
 	WrappedKey  []byte    `json:"wrapped_key"`
-	KeyRef      string    `json:"key_ref,omitempty"`
 	Revision    *Revision `json:"revision"`
 }
 

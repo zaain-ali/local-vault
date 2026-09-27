@@ -2,9 +2,6 @@ package lvcrypto
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"errors"
 	"regexp"
 	"strings"
@@ -187,46 +184,6 @@ func TestX25519Grant(t *testing.T) {
 	}
 	if _, err := WrapX25519(dek[:16], keys.X25519Public, info); err == nil {
 		t.Fatal("short DEK accepted")
-	}
-}
-
-func TestRSAGrant(t *testing.T) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	der, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	pub, err := ParseRSASPKI(der)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dek := mustDEK(t)
-	w, err := WrapRSA(dek, pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if SchemeOf(w) != SchemeRSA {
-		t.Fatal("bad scheme")
-	}
-	got, err := UnwrapRSALocal(w, priv)
-	if err != nil || !bytes.Equal(got, dek) {
-		t.Fatalf("unwrap: %v", err)
-	}
-	if _, err := UnwrapRSALocal(flip(w, 20), priv); err == nil {
-		t.Fatal("tamper not detected")
-	}
-	var seen []byte
-	got, err = UnwrapRSAWith(w, func(ct []byte) ([]byte, error) { seen = ct; return dek, nil })
-	if err != nil || !bytes.Equal(seen, w[1:]) || !bytes.Equal(got, dek) {
-		t.Fatal("UnwrapRSAWith did not pass raw ciphertext")
-	}
-	if _, err := UnwrapRSAWith(w, func([]byte) ([]byte, error) { return []byte("short"), nil }); err == nil {
-		t.Fatal("short DEK accepted")
-	}
-	small, _ := rsa.GenerateKey(rand.Reader, 1024)
-	sder, _ := x509.MarshalPKIXPublicKey(&small.PublicKey)
-	if _, err := ParseRSASPKI(sder); err == nil {
-		t.Fatal("1024-bit key accepted")
 	}
 }
 

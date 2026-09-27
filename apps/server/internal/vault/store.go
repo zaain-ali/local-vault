@@ -659,13 +659,13 @@ func (s *Store) FindMachine(ctx context.Context, id string) (*Machine, error) {
 	return &m, nil
 }
 
-// RevokeMachines marks machines revoked with a reason.
-func (s *Store) RevokeMachines(ctx context.Context, ids []string, reason string) error {
+// RevokeMachines marks the given machines of one vault revoked with a reason.
+func (s *Store) RevokeMachines(ctx context.Context, vaultID string, ids []string, reason string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	_, err := s.machines.UpdateMany(ctx,
-		bson.M{"_id": bson.M{"$in": ids}, "revoked": bson.M{"$ne": true}},
+		bson.M{"_id": bson.M{"$in": ids}, "vault_id": vaultID, "revoked": bson.M{"$ne": true}},
 		bson.M{"$set": bson.M{"revoked": true, "revoked_reason": reason, "revoked_at": time.Now()}},
 	)
 	return err

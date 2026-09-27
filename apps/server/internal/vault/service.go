@@ -619,6 +619,12 @@ func (s *Service) CreateGrants(ctx context.Context, workspaceID, vaultID, userID
 	if err != nil {
 		return err
 	}
+	// Issuing keys is a vault-management action (same gate as AddMember, whose
+	// CLI flow posts grants right after). Holding the key alone must not let
+	// an ordinary member fan it out; the HasGrant check below still applies.
+	if err := a.requireManage(); err != nil {
+		return err
+	}
 	if len(req.Grants) == 0 {
 		return apperror.New(400, "grants is required")
 	}
@@ -1136,7 +1142,7 @@ func (s *Service) Rekey(ctx context.Context, workspaceID, vaultID, env, userID, 
 			return apperror.New(409, "environment key_version changed")
 		}
 		if len(tokenIDs) > 0 {
-			_ = s.Store.RevokeMachines(ctx, tokenIDs, "rekey")
+			_ = s.Store.RevokeMachines(ctx, vaultID, tokenIDs, "rekey")
 			_ = s.Store.DeleteMachineGrants(ctx, vaultID, tokenIDs)
 		}
 		return nil

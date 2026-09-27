@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -61,14 +62,19 @@ func New(cfg config.Config) (*App, error) {
 	db := client.Database(cfg.MongoDB)
 
 	// --------------- RabbitMQ (email + events) ---------
-	// Optional in development so `go run` works without a broker.
+	// Optional: an unset RABBITMQ_URL disables email + cross-instance events
+	// in every environment. A URL that is set but unreachable is a
+	// misconfiguration, so production fails fast instead of silently
+	// dropping invite emails; development falls back so `go run` still works.
 	hub := events.NewHub()
 	var publisher *email.Publisher
 	var eventBus *events.Bus
-	conn, mqCh, err := email.Connect(cfg.RabbitMQURL)
-	if err != nil {
+	if cfg.RabbitMQURL == "" {
+		log.Printf("ℹ️ RabbitMQ not configured — email + cross-instance events disabled")
+		eventBus = events.NewLocalBus(hub)
+	} else if conn, mqCh, err := email.Connect(cfg.RabbitMQURL); err != nil {
 		if cfg.Env == "production" || cfg.Env == "prod" {
-			return nil, err
+			return nil, fmt.Errorf("RABBITMQ_URL is set but the broker is unreachable (unset it to run without email): %w", err)
 		}
 		log.Printf("⚠️ RabbitMQ unavailable (%v) — email + cross-instance events disabled", err)
 		eventBus = events.NewLocalBus(hub)

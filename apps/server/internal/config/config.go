@@ -45,9 +45,6 @@ type Config struct {
 	RabbitMQURL			string
 	EmailMaxRetries		int
 	EmailRetryDelay		time.Duration	// wait this long before each retry
-
-	// AWS workload-identity binding: clients must sign x-lv-server-id with this value.
-	AWSServerID string
 }
 
 // Load reads env vars and returns Config — call once in main()
@@ -82,11 +79,11 @@ func Load() Config {
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
 		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
 
-		// Prefer RABBITMQ_URL; fall back to Heroku CloudAMQP's CLOUDAMQP_URL
-		RabbitMQURL: getEnv("RABBITMQ_URL", getEnv("CLOUDAMQP_URL", "amqp://guest:guest@localhost:5672/")),
+		// Prefer RABBITMQ_URL; fall back to Heroku CloudAMQP's CLOUDAMQP_URL.
+		// Empty means "no broker": email + cross-instance events are disabled.
+		RabbitMQURL: getEnv("RABBITMQ_URL", getEnv("CLOUDAMQP_URL", "")),
 		EmailMaxRetries:	parseInt(getEnv("EMAIL_MAX_RETRIES", "5")),
 		EmailRetryDelay: 	parseDuration(getEnv("EMAIL_RETRY_DELAY", "30s")),
-		AWSServerID:        getEnv("LV_AWS_SERVER_ID", "localvault"),
 	}
 }
 

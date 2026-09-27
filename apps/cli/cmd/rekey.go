@@ -7,6 +7,7 @@ import (
 
 	"github.com/zain-23/local-vault/apps/cli/internal/account"
 	"github.com/zain-23/local-vault/apps/cli/internal/knownkeys"
+	"github.com/zain-23/local-vault/apps/cli/internal/localstore"
 	"github.com/zain-23/local-vault/apps/cli/internal/lvcrypto"
 	"github.com/zain-23/local-vault/apps/cli/internal/ui"
 )
@@ -20,6 +21,9 @@ var rekeyCmd = &cobra.Command{
 			return err
 		}
 		if err := v.syncGrants(); err != nil {
+			return err
+		}
+		if err := checkRekeyable(v.Env, v.State.Envs[v.Env]); err != nil {
 			return err
 		}
 		detail, err := v.Client.GetVaultV4(v.Project.Workspace, v.Project.Vault)
@@ -52,26 +56,34 @@ var rekeyCmd = &cobra.Command{
 			return err
 		}
 
-		var revBody map[string]any
+		// The new-key revision is built from the server head. checkRekeyable
+		// guarantees there are no unpushed local edits to lose, and after the
+		// rekey the local base/working copy are re-anchored to this revision.
+		snap := &lvcrypto.Snapshot{Version: lvcrypto.SnapshotVersion}
+		var (
+			revBody map[string]any
+			nextRev int
+			nextCT  []byte
+		)
 		if envInfo.head > 0 {
 			head, err := v.Client.HeadRevision(v.Project.Workspace, v.Project.Vault, v.Env, "")
 			if err != nil {
 				return mapNotLoggedIn(err)
 			}
-			snap, err := lvcrypto.DecryptRevision(oldDEK, v.Project.Vault, v.Env, head.Revision, head.KeyVersion, head.Ciphertext)
+			snap, err = lvcrypto.DecryptRevision(oldDEK, v.Project.Vault, v.Env, head.Revision, head.KeyVersion, head.Ciphertext)
 			if err != nil {
 				return err
 			}
-			next := head.Revision + 1
-			ct, err := lvcrypto.EncryptRevision(newDEK, v.Project.Vault, v.Env, next, newKV, snap)
+			nextRev = head.Revision + 1
+			nextCT, err = lvcrypto.EncryptRevision(newDEK, v.Project.Vault, v.Env, nextRev, newKV, snap)
 			if err != nil {
 				return err
 			}
-			sig := lvcrypto.SignRevision(keys.Ed25519, v.Project.Vault, v.Env, next, head.Revision, newKV, ct)
+			sig := lvcrypto.SignRevision(keys.Ed25519, v.Project.Vault, v.Env, nextRev, head.Revision, newKV, nextCT)
 			revBody = map[string]any{
 				"base_revision": head.Revision,
 				"key_version":   newKV,
-				"ciphertext":    ct,
+				"ciphertext":    nextCT,
 				"signature":     sig,
 			}
 		}
@@ -128,13 +140,26 @@ var rekeyCmd = &cobra.Command{
 			return err
 		}
 		v.State.PutGrant(v.Env, newKV, selfWrap)
-		if err := v.State.Save(); err != nil {
+		// PutGrant advanced the local key version; the base and working blobs
+		// are still sealed under the old DEK, so rewrite them under the new one.
+		v.State.SetBase(v.Env, nextRev, newKV, nextCT)
+		if err := v.State.SetWorking(v.Env, snap, false); err != nil {
 			return err
 		}
 		ui.Success("rekeyed %s to version %d", v.Env, newKV)
 		ui.Hint("service tokens for this env were revoked — issue new ones: lv machine token")
 		return nil
 	},
+}
+
+// checkRekeyable refuses to rotate an environment whose local working copy has
+// unpushed edits: the rekey revision is derived from the server head, so those
+// edits would otherwise be silently dropped.
+func checkRekeyable(env string, st localstore.EnvState) error {
+	if st.Dirty {
+		return fmt.Errorf("%s has unpushed local changes — run: lv push before rekey", env)
+	}
+	return nil
 }
 
 func joinIDs(ids []string) string {

@@ -90,6 +90,21 @@ func clamp(k []byte) []byte {
 	return c
 }
 
+// GenerateX25519 creates a standalone X25519 key pair (clamped private key),
+// e.g. for a machine identity that has no account key bundle.
+func GenerateX25519() (priv, pub []byte, err error) {
+	raw, err := randBytes(rand.Reader, KeySize)
+	if err != nil {
+		return nil, nil, err
+	}
+	priv = clamp(raw)
+	pub, err = curve25519.X25519(priv, curve25519.Basepoint)
+	if err != nil {
+		return nil, nil, err
+	}
+	return priv, pub, nil
+}
+
 // X25519Public derives the public key for a 32-byte X25519 private key.
 func X25519Public(priv []byte) ([]byte, error) {
 	if len(priv) != KeySize {

@@ -1,7 +1,9 @@
 package machine
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -88,8 +90,15 @@ func (h *Handler) Events(c *fiber.Ctx) error {
 	if h.hub == nil {
 		return apperror.ErrInternal
 	}
+	// The fiber context is released once this handler returns, so the
+	// per-ping re-check uses its own short-lived context.
 	return events.Stream(c, h.hub.Subscribe(m.VaultID), events.StreamOptions{
 		Filter: func(e events.Event) bool { return e.Env == "" || e.Env == m.Env },
+		StillAllowed: func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return h.svc.StillActive(ctx, m.ID, m.VaultID, m.Env)
+		},
 	})
 }
 

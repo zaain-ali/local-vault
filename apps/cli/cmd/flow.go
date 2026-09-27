@@ -184,7 +184,7 @@ func (v *vaultCtx) grantPending(yes bool) error {
 		}
 		ui.Info("%s %s  %s", p.Env, p.Label, p.Fingerprint)
 		if p.KeyType != "x25519" {
-			ui.Warn("skipping %s — key type %s needs a KMS wrap", p.Label, p.KeyType)
+			ui.Warn("skipping %s — unsupported key type %s", p.Label, p.KeyType)
 			continue
 		}
 		wrapped, err := v.wrapGrant(p.Env, p.KeyVersion, p.PublicKey)

@@ -24,15 +24,14 @@ const (
 // Wrapped-key scheme tags (first byte of wrapped_key).
 const (
 	SchemeX25519 byte = 0x01
-	SchemeRSA    byte = 0x02
-	SchemeToken  byte = 0x03
+	// 0x02 was RSA-OAEP (KMS-backed AWS identities), removed; tag stays reserved.
+	SchemeToken byte = 0x03
 )
 
 // Exact lengths for a 32-byte DEK.
 const (
 	x25519WrappedLen = 1 + 32 + 12 + 32 + 16 // tag || eph_pub || nonce || ct || gcm tag
 	tokenWrappedLen  = 1 + 12 + 32 + 16
-	minRSAWrappedLen = 1 + 128 // RSA-1024 modulus is the smallest we accept
 )
 
 var envNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -78,13 +77,8 @@ func validateWrappedKey(recipientType, machineKeyType string, wk []byte) *apperr
 		return apperror.WithCode(400, "bad_wrapped_key", "wrapped_key has an invalid length")
 	}
 	want := SchemeX25519
-	if recipientType == RecipientMachine {
-		switch machineKeyType {
-		case KeyTypeRSA:
-			want = SchemeRSA
-		case KeyTypeToken:
-			want = SchemeToken
-		}
+	if recipientType == RecipientMachine && machineKeyType == KeyTypeToken {
+		want = SchemeToken
 	}
 	if wk[0] != want {
 		return apperror.WithCode(400, "bad_wrapped_key", "wrapped_key scheme does not match the recipient key type")
@@ -95,8 +89,6 @@ func validateWrappedKey(recipientType, machineKeyType string, wk []byte) *apperr
 		ok = len(wk) == x25519WrappedLen
 	case SchemeToken:
 		ok = len(wk) == tokenWrappedLen
-	case SchemeRSA:
-		ok = len(wk) >= minRSAWrappedLen
 	}
 	if !ok {
 		return apperror.WithCode(400, "bad_wrapped_key", "wrapped_key has an invalid length for its scheme")

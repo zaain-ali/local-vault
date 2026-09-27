@@ -254,7 +254,7 @@ This project is [MIT-licensed](LICENSE). The CLI, API, and web app are yours to 
 
 **GitHub OAuth** is required for `lv login` and the dashboard when you run your own server. Create an OAuth app and set the callback to `GITHUB_REDIRECT_URL`.
 
-**RabbitMQ** is only needed for the email worker (and cross-instance events). The API starts without it; email and those events stay disabled.
+**RabbitMQ** is only needed for the email worker (and cross-instance events). Leave `RABBITMQ_URL` unset and the API starts without it; email and those events stay disabled. If you do set it, production refuses to start when the broker is unreachable, so a broken broker is noticed rather than silently dropping invite emails.
 
 Copy [`apps/server/.env.example`](apps/server/.env.example) to `apps/server/.env` and fill in your values. Never commit `.env` or API keys.
 

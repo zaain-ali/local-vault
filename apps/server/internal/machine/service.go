@@ -37,10 +37,8 @@ type CreateRequest struct {
 	Kind          string     `json:"kind" validate:"required"`
 	KeyType       string     `json:"key_type" validate:"required"`
 	PublicKey     []byte     `json:"public_key"`
-	KeyRef        string     `json:"key_ref"`
 	TokenVerifier string     `json:"token_verifier"`
 	OIDC          *OIDCSpec  `json:"oidc"`
-	AWS           *AWSSpec   `json:"aws"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	Grant         struct {
 		KeyVersion int    `json:"key_version"`
@@ -72,7 +70,7 @@ func (s *Service) Create(ctx context.Context, workspaceID, vaultID, userID, emai
 	m := &Identity{
 		ID: mid, WorkspaceID: workspaceID, VaultID: vaultID, Env: req.Env,
 		Name: req.Name, Kind: kind, KeyType: keyType, PublicKey: req.PublicKey,
-		KeyRef: req.KeyRef, OIDC: req.OIDC, AWS: req.AWS, CreatedBy: userID,
+		OIDC: req.OIDC, CreatedBy: userID,
 		CreatedAt: now, ExpiresAt: req.ExpiresAt,
 	}
 	switch kind {
@@ -84,6 +82,9 @@ func (s *Service) Create(ctx context.Context, workspaceID, vaultID, userID, emai
 		if keyType == "" {
 			m.KeyType = KeyTypeToken
 		}
+		if m.KeyType != KeyTypeToken {
+			return nil, apperror.New(400, "token machines must use key_type token")
+		}
 	case KindOIDC:
 		if req.OIDC == nil || req.OIDC.Issuer == "" || req.OIDC.Subject == "" {
 			return nil, apperror.New(400, "oidc.issuer and oidc.subject are required")
@@ -92,12 +93,14 @@ func (s *Service) Create(ctx context.Context, workspaceID, vaultID, userID, emai
 			req.OIDC.Audience = "localvault"
 			m.OIDC.Audience = "localvault"
 		}
-	case KindAWS:
-		if req.AWS == nil || req.AWS.RoleARN == "" {
-			return nil, apperror.New(400, "aws.role_arn is required")
+		if keyType == "" {
+			m.KeyType = KeyTypeX25519
+		}
+		if m.KeyType != KeyTypeX25519 {
+			return nil, apperror.New(400, "oidc machines must use key_type x25519")
 		}
 	default:
-		return nil, apperror.New(400, "kind must be token, oidc, or aws")
+		return nil, apperror.New(400, "kind must be token or oidc")
 	}
 	if err := s.store.Insert(ctx, m); err != nil {
 		if err == ErrExists {
@@ -142,7 +145,7 @@ func (s *Service) Revoke(ctx context.Context, workspaceID, vaultID, machineID, u
 	if !a.IsVaultAdmin() {
 		return apperror.WithCode(403, "no_access", "vault admin required")
 	}
-	ok, err := s.store.Revoke(ctx, machineID, "revoked")
+	ok, err := s.store.Revoke(ctx, workspaceID, vaultID, machineID, "revoked")
 	if err != nil {
 		return apperror.ErrInternal
 	}
@@ -158,18 +161,10 @@ func (s *Service) Revoke(ctx context.Context, workspaceID, vaultID, machineID, u
 }
 
 type LoginRequest struct {
-	MachineID     string          `json:"machine_id" validate:"required"`
-	Method        string          `json:"method" validate:"required"`
-	TokenVerifier string          `json:"token_verifier"`
-	JWT           string          `json:"jwt"`
-	AWS           *AWSLoginProof  `json:"aws"`
-}
-
-type AWSLoginProof struct {
-	Method  string              `json:"method"`
-	URL     string              `json:"url"`
-	Headers map[string][]string `json:"headers"`
-	Body    string              `json:"body"`
+	MachineID     string `json:"machine_id" validate:"required"`
+	Method        string `json:"method" validate:"required"`
+	TokenVerifier string `json:"token_verifier"`
+	JWT           string `json:"jwt"`
 }
 
 type LoginResponse struct {
@@ -197,12 +192,8 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 		if m.Kind != KindOIDC || !verifyOIDC(s.http, req.JWT, m.OIDC) {
 			return nil, apperror.New(401, "invalid machine identity")
 		}
-	case KindAWS:
-		if m.Kind != KindAWS || !verifyAWS(s.http, req.AWS, m.AWS, s.cfg.AWSServerID) {
-			return nil, apperror.New(401, "invalid machine identity")
-		}
 	default:
-		return nil, apperror.New(400, "method must be token, oidc, or aws")
+		return nil, apperror.New(400, "method must be token or oidc")
 	}
 	tok, exp, err := s.jwt.GenerateMachineToken(m.ID, m.WorkspaceID, m.VaultID, m.Env)
 	if err != nil {
@@ -219,7 +210,6 @@ type SecretsResponse struct {
 	KeyVersion  int                    `json:"key_version"`
 	KeyType     string                 `json:"key_type"`
 	WrappedKey  []byte                 `json:"wrapped_key"`
-	KeyRef      string                 `json:"key_ref,omitempty"`
 	Revision    *vault.RevisionResponse `json:"revision"`
 }
 
@@ -228,7 +218,7 @@ func (s *Service) Secrets(ctx context.Context, mid, workspaceID, vaultID, env st
 	if err != nil {
 		return nil, 0, apperror.ErrInternal
 	}
-	if m == nil || m.Revoked || m.VaultID != vaultID || m.Env != env {
+	if !m.usable(time.Now(), vaultID, env) {
 		return nil, 0, apperror.New(401, "invalid machine identity")
 	}
 	v, err := s.vault.Store.FindVault(ctx, vaultID)
@@ -265,8 +255,19 @@ func (s *Service) Secrets(ctx context.Context, mid, workspaceID, vaultID, env st
 	}
 	return &SecretsResponse{
 		WorkspaceID: workspaceID, VaultID: vaultID, Env: env, KeyVersion: kv,
-		KeyType: m.KeyType, WrappedKey: wk, KeyRef: m.KeyRef, Revision: rev,
+		KeyType: m.KeyType, WrappedKey: wk, Revision: rev,
 	}, e.HeadRevision, nil
 }
 
-// verifyAWS is implemented in aws.go; verifyOIDC in oidc.go.
+// StillActive re-checks a machine's standing for a long-lived connection (the
+// SSE stream). It fails closed: a lookup error ends the stream rather than
+// letting a possibly revoked machine keep receiving events.
+func (s *Service) StillActive(ctx context.Context, mid, vaultID, env string) bool {
+	m, err := s.store.Find(ctx, mid)
+	if err != nil {
+		return false
+	}
+	return m.usable(time.Now(), vaultID, env)
+}
+
+// verifyOIDC is implemented in oidc.go.

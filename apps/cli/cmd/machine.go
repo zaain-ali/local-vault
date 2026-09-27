@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -14,7 +15,6 @@ var (
 	machineIssuer  string
 	machineSubject string
 	machineAud     string
-	machineRoleARN string
 )
 
 var machineCmd = &cobra.Command{
@@ -85,42 +85,62 @@ var machineOIDCCmd = &cobra.Command{
 		if aud == "" {
 			aud = "localvault"
 		}
-		out, err := v.Client.CreateMachine(v.Project.Workspace, v.Project.Vault, map[string]any{
-			"name": machineName, "env": v.Env, "kind": "oidc", "key_type": "x25519",
-			"oidc": map[string]any{"issuer": machineIssuer, "audience": aud, "subject": machineSubject},
+		if err := v.syncGrants(); err != nil {
+			return err
+		}
+		st := v.State.Envs[v.Env]
+		kv := st.KeyVersion
+		if kv == 0 {
+			kv = 1
+		}
+		dek, err := v.State.DEK(v.Env, kv)
+		if err != nil {
+			return err
+		}
+		body, privHex, err := oidcMachineBody(dek, v.Project.Vault, v.Env, kv, oidcMachineSpec{
+			Name: machineName, Issuer: machineIssuer, Subject: machineSubject, Audience: aud,
 		})
+		if err != nil {
+			return err
+		}
+		out, err := v.Client.CreateMachine(v.Project.Workspace, v.Project.Vault, body)
 		if err != nil {
 			return mapNotLoggedIn(err)
 		}
 		ui.Success("OIDC machine created: %s", out.ID)
-		ui.Hint("grant it a key after it uploads a public key, or wrap with: lv access grant")
-		ui.Hint("runtime: LV_MACHINE_ID=%s LV_OIDC_TOKEN=... lv run --oidc -- ./app", out.ID)
+		ui.Warn("this machine key is shown once — store it in your CI secret store as LV_MACHINE_KEY")
+		ui.Code(privHex)
+		ui.Hint("runtime: LV_MACHINE_ID=%s LV_MACHINE_KEY=... LV_OIDC_TOKEN=... lv run --oidc -- ./app", out.ID)
+		ui.Hint("after a rekey, re-grant it with: lv access grant")
 		return nil
 	},
 }
 
-var machineAWSCmd = &cobra.Command{
-	Use:   "aws",
-	Short: "Register an AWS IAM role identity",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		v, err := requireVault(envFlag)
-		if err != nil {
-			return err
-		}
-		if machineName == "" || machineRoleARN == "" {
-			return fmt.Errorf("--name and --role-arn are required")
-		}
-		out, err := v.Client.CreateMachine(v.Project.Workspace, v.Project.Vault, map[string]any{
-			"name": machineName, "env": v.Env, "kind": "aws", "key_type": "rsa-oaep-256",
-			"aws": map[string]any{"role_arn": machineRoleARN},
-		})
-		if err != nil {
-			return mapNotLoggedIn(err)
-		}
-		ui.Success("AWS machine created: %s", out.ID)
-		ui.Hint("grant the KMS-wrapped DEK with: lv access grant")
-		return nil
-	},
+type oidcMachineSpec struct {
+	Name, Issuer, Subject, Audience string
+}
+
+// oidcMachineBody builds the CreateMachine request for an OIDC identity. OIDC
+// only authenticates the workload; the server has no key-upload route, so the
+// creator mints the machine's X25519 key pair here, registers the public half,
+// and wraps the current environment DEK to it in the same request. The private
+// key is returned hex-encoded for LV_MACHINE_KEY and is never persisted locally.
+func oidcMachineBody(dek []byte, vaultID, env string, kv int, spec oidcMachineSpec) (map[string]any, string, error) {
+	priv, pub, err := lvcrypto.GenerateX25519()
+	if err != nil {
+		return nil, "", err
+	}
+	wrapped, err := lvcrypto.WrapX25519(dek, pub, lvcrypto.GrantInfo(vaultID, env, kv))
+	if err != nil {
+		return nil, "", err
+	}
+	body := map[string]any{
+		"name": spec.Name, "env": env, "kind": "oidc", "key_type": "x25519",
+		"public_key": pub,
+		"oidc":       map[string]any{"issuer": spec.Issuer, "audience": spec.Audience, "subject": spec.Subject},
+		"grant":      map[string]any{"key_version": kv, "wrapped_key": wrapped},
+	}
+	return body, hex.EncodeToString(priv), nil
 }
 
 var machineListCmd = &cobra.Command{
@@ -171,7 +191,7 @@ var machineRevokeCmd = &cobra.Command{
 }
 
 func init() {
-	for _, c := range []*cobra.Command{machineTokenCmd, machineOIDCCmd, machineAWSCmd, machineListCmd} {
+	for _, c := range []*cobra.Command{machineTokenCmd, machineOIDCCmd, machineListCmd} {
 		c.Flags().StringVarP(&envFlag, "env", "e", "", "environment")
 	}
 	machineTokenCmd.Flags().StringVar(&machineName, "name", "", "machine name")
@@ -179,8 +199,6 @@ func init() {
 	machineOIDCCmd.Flags().StringVar(&machineIssuer, "issuer", "", "OIDC issuer URL")
 	machineOIDCCmd.Flags().StringVar(&machineSubject, "subject", "", "OIDC subject (globs allowed)")
 	machineOIDCCmd.Flags().StringVar(&machineAud, "audience", "localvault", "OIDC audience")
-	machineAWSCmd.Flags().StringVar(&machineName, "name", "", "machine name")
-	machineAWSCmd.Flags().StringVar(&machineRoleARN, "role-arn", "", "IAM role ARN")
-	machineCmd.AddCommand(machineTokenCmd, machineOIDCCmd, machineAWSCmd, machineListCmd, machineRevokeCmd)
+	machineCmd.AddCommand(machineTokenCmd, machineOIDCCmd, machineListCmd, machineRevokeCmd)
 	rootCmd.AddCommand(machineCmd)
 }

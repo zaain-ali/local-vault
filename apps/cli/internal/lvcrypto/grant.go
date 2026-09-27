@@ -2,9 +2,6 @@ package lvcrypto
 
 import (
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"errors"
 	"io"
 
@@ -14,14 +11,13 @@ import (
 // Wrapped key scheme tags.
 const (
 	SchemeX25519 byte = 0x01
-	SchemeRSA    byte = 0x02
-	SchemeToken  byte = 0x03
+	// 0x02 was RSA-OAEP (KMS-backed AWS identities), removed; tag stays reserved.
+	SchemeToken byte = 0x03
 )
 
 const (
 	grantInfoPfx = "lv-grant-v1|"
 	tokenWrapPfx = "lv-st-wrap-v1|"
-	minRSABits   = 2048
 )
 
 var errBadWrapped = errors.New("lvcrypto: malformed wrapped key")
@@ -117,61 +113,6 @@ func UnwrapX25519(wrapped, recipientPriv []byte, info string) ([]byte, error) {
 		return nil, err
 	}
 	return dek, checkDEK(dek)
-}
-
-// ParseRSASPKI parses an RSA public key from SPKI DER.
-func ParseRSASPKI(der []byte) (*rsa.PublicKey, error) {
-	k, err := x509.ParsePKIXPublicKey(der)
-	if err != nil {
-		return nil, err
-	}
-	pub, ok := k.(*rsa.PublicKey)
-	if !ok {
-		return nil, errors.New("lvcrypto: not an RSA public key")
-	}
-	if pub.N.BitLen() < minRSABits {
-		return nil, errors.New("lvcrypto: RSA key too small")
-	}
-	return pub, nil
-}
-
-// WrapRSA wraps dek with RSA-OAEP-SHA256, empty label (scheme 0x02).
-func WrapRSA(dek []byte, pub *rsa.PublicKey) ([]byte, error) {
-	if err := checkDEK(dek); err != nil {
-		return nil, err
-	}
-	if pub.N.BitLen() < minRSABits {
-		return nil, errors.New("lvcrypto: RSA key too small")
-	}
-	ct, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, dek, nil)
-	if err != nil {
-		return nil, err
-	}
-	return append([]byte{SchemeRSA}, ct...), nil
-}
-
-// UnwrapRSAWith unwraps a scheme 0x02 key using decrypt (e.g. a KMS call
-// performing RSA-OAEP-SHA256 on the raw ciphertext).
-func UnwrapRSAWith(wrapped []byte, decrypt func(ciphertext []byte) ([]byte, error)) ([]byte, error) {
-	if len(wrapped) < 2 || wrapped[0] != SchemeRSA {
-		return nil, errBadWrapped
-	}
-	dek, err := decrypt(wrapped[1:])
-	if err != nil {
-		return nil, err
-	}
-	return dek, checkDEK(dek)
-}
-
-// UnwrapRSALocal unwraps a scheme 0x02 key with a local RSA private key.
-func UnwrapRSALocal(wrapped []byte, priv *rsa.PrivateKey) ([]byte, error) {
-	return UnwrapRSAWith(wrapped, func(ct []byte) ([]byte, error) {
-		pt, err := rsa.DecryptOAEP(sha256.New(), nil, priv, ct, nil)
-		if err != nil {
-			return nil, ErrDecrypt
-		}
-		return pt, nil
-	})
 }
 
 func tokenWrapKey(secret []byte, info string) ([]byte, error) {

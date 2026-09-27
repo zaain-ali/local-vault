@@ -58,8 +58,12 @@ func (s *Store) List(ctx context.Context, vaultID string) ([]Identity, error) {
 	return out, err
 }
 
-func (s *Store) Revoke(ctx context.Context, id, reason string) (bool, error) {
-	res, err := s.col.UpdateOne(ctx, bson.M{"_id": id, "revoked": bson.M{"$ne": true}}, bson.M{
+// Revoke marks one machine revoked. The filter is scoped to the workspace and
+// vault from the request path so an admin of one vault cannot revoke another
+// vault's machine by guessing its ID.
+func (s *Store) Revoke(ctx context.Context, workspaceID, vaultID, id, reason string) (bool, error) {
+	filter := bson.M{"_id": id, "workspace_id": workspaceID, "vault_id": vaultID, "revoked": bson.M{"$ne": true}}
+	res, err := s.col.UpdateOne(ctx, filter, bson.M{
 		"$set": bson.M{"revoked": true, "revoked_reason": reason, "revoked_at": time.Now()},
 	})
 	if err != nil {

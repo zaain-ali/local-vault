@@ -15,7 +15,9 @@ type SummaryResponse struct {
 type VaultCounts struct {
 	Total        int64 `json:"total"`
 	WithSnapshot int64 `json:"with_snapshot"`
-	PeerTotal    int64 `json:"peer_total"`
+	// MemberTotal counts vault memberships across the workspace (a user in
+	// three vaults counts three times), not distinct people.
+	MemberTotal int64 `json:"member_total"`
 }
 
 type CountTotal struct {

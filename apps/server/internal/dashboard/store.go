@@ -36,12 +36,12 @@ func NewStore(db *mongo.Database) *Store {
 type vaultAgg struct {
 	Total        int64 `bson:"total"`
 	WithSnapshot int64 `bson:"with_snapshot"`
-	PeerTotal    int64 `bson:"peer_total"`
 }
 
 // SummaryCounts holds raw counts from Mongo for the summary endpoint.
 type SummaryCounts struct {
 	Vaults               vaultAgg
+	VaultMemberTotal     int64 // vault_members rows: one per (vault, user) pairing
 	MemberTotal          int64
 	PendingInvites       int64
 	PendingCollaborators int64
@@ -70,7 +70,6 @@ func (s *Store) GetSummaryCounts(ctx context.Context, workspaceID string) (Summa
 					0,
 				},
 			}},
-			"peer_total": bson.M{"$sum": 0},
 		}}},
 	}
 	cursor, err := s.vaults.Aggregate(ctx, pipeline)
@@ -98,7 +97,7 @@ func (s *Store) GetSummaryCounts(ctx context.Context, workspaceID string) (Summa
 		return out, err
 	}
 
-	out.Vaults.PeerTotal, err = s.vMembers.CountDocuments(ctx, bson.M{"workspace_id": workspaceID})
+	out.VaultMemberTotal, err = s.vMembers.CountDocuments(ctx, bson.M{"workspace_id": workspaceID})
 	if err != nil {
 		return out, err
 	}
